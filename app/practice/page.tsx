@@ -4,9 +4,11 @@ import React, { useState, useEffect } from "react";
 import { supabase } from "@/lib/supabaseClient";
 import QuizEngine, { Question } from "@/components/jlpt/QuizEngine";
 import ScoreReviewModal from "@/components/jlpt/ScoreReviewModal";
+import ClassroomDrillsHub from "@/components/ClassroomDrillsHub";
 
 type JLPTLevel = "N5" | "N4" | "N3" | "N2" | "N1";
 type PracticeMode = "VOCABULARY" | "KANJI" | "GRAMMAR" | "FULL_EXAM";
+type ViewState = "MAIN" | "CLASSROOM_HUB" | "QUIZ";
 
 interface TestSet {
   id: string;
@@ -29,11 +31,11 @@ interface GrammarRow {
   id: string;
   level: string;
   pattern?: string;
-  grammar_point?: string; // Fallback field name
-  pattern_ja?: string; // Fallback field name
+  grammar_point?: string;
+  pattern_ja?: string;
   meaning?: string;
-  meanings?: string; // Fallback field name
-  meaning_en?: string; // Fallback field name
+  meanings?: string;
+  meaning_en?: string;
   example_ja?: string | null;
   example_en?: string | null;
 }
@@ -42,16 +44,17 @@ interface KanjiRow {
   id: string;
   level: string;
   kanji?: string;
-  character?: string; // Fallback field name
+  character?: string;
   onyomi?: string | null;
   kunyomi?: string | null;
   meaning?: string;
-  meanings?: string; // Fallback field name
-  meaning_en?: string; // Fallback field name
+  meanings?: string;
+  meaning_en?: string;
   examples?: string | null;
 }
 
 export default function PracticePage() {
+  const [view, setView] = useState<ViewState>("MAIN");
   const [selectedLevel, setSelectedLevel] = useState<JLPTLevel | null>(null);
   const [selectedMode, setSelectedMode] = useState<PracticeMode | null>(null);
   const [testSets, setTestSets] = useState<TestSet[]>([]);
@@ -67,6 +70,15 @@ export default function PracticePage() {
   const [userAnswers, setUserAnswers] = useState<{ [key: number]: number }>({});
   const [finalScore, setFinalScore] = useState(0);
 
+  // Classroom Drills handler
+  const handleStartClassroomQuiz = (classroomQuestions: Question[]) => {
+    setQuestions(classroomQuestions);
+    setCurrentQuestionIndex(0);
+    setUserAnswers({});
+    setQuizFinished(false);
+    setView("QUIZ");
+  };
+
   useEffect(() => {
     if (selectedLevel && selectedMode === "FULL_EXAM") {
       fetchTestSets(selectedLevel);
@@ -75,7 +87,12 @@ export default function PracticePage() {
 
   // 10-Second Auto-Advance Countdown Logic
   useEffect(() => {
-    if (!selectedMode || questions.length === 0 || quizFinished) return;
+    if (
+      (view !== "MAIN" && view !== "QUIZ") ||
+      questions.length === 0 ||
+      quizFinished
+    )
+      return;
 
     setTimeLeft(10); // 10 seconds per question
 
@@ -90,7 +107,7 @@ export default function PracticePage() {
     }, 1000);
 
     return () => clearInterval(timer);
-  }, [currentQuestionIndex, questions, quizFinished, selectedMode]);
+  }, [currentQuestionIndex, questions, quizFinished, view]);
 
   const handleAutoNext = () => {
     if (currentQuestionIndex + 1 < questions.length) {
@@ -113,7 +130,6 @@ export default function PracticePage() {
     }
   };
 
-  // Explicit End Test Action
   const handleEndQuizEarly = () => {
     finishQuiz();
   };
@@ -255,12 +271,10 @@ export default function PracticePage() {
 
   const transformKanjiToQuestions = (kanjiList: KanjiRow[]): Question[] => {
     return kanjiList.map((item, idx) => {
-      // Determine the actual kanji character and meaning safely
       const kanjiText = item.kanji || item.character || "漢字";
       const primaryMeaning =
         item.meaning || item.meanings || item.meaning_en || "Meaning N/A";
 
-      // Collect meanings from other rows for distractors
       const otherMeanings = kanjiList
         .filter((_, i) => i !== idx)
         .map((k) => k.meaning || k.meanings || k.meaning_en)
@@ -364,6 +378,7 @@ export default function PracticePage() {
   };
 
   const resetAll = () => {
+    setView("MAIN");
     setSelectedLevel(null);
     setSelectedMode(null);
     setSelectedSetId(null);
@@ -381,94 +396,169 @@ export default function PracticePage() {
           Meikoshi JLPT Practice Platform
         </h1>
 
-        {/* STEP 1: SELECT LEVEL */}
-        {!selectedLevel && (
-          <div>
-            <p className="text-center text-gray-600 mb-6">
-              Select your target JLPT level to begin
-            </p>
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 max-w-2xl mx-auto">
-              {(["N5", "N4", "N3", "N2", "N1"] as JLPTLevel[]).map((level) => (
+        {/* VIEW 1: MAIN NAVIGATION */}
+        {view === "MAIN" && (
+          <>
+            {/* STEP 1: SELECT LEVEL */}
+            {!selectedLevel && (
+              <div>
+                <p className="text-center text-gray-600 mb-6">
+                  Select your target JLPT level to begin
+                </p>
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 max-w-2xl mx-auto">
+                  {(["N5", "N4", "N3", "N2", "N1"] as JLPTLevel[]).map(
+                    (level) => (
+                      <button
+                        key={level}
+                        onClick={() => setSelectedLevel(level)}
+                        disabled={level !== "N5" && level !== "N4"}
+                        className="p-6 bg-white border border-gray-200 rounded-xl shadow-sm hover:border-blue-500 hover:shadow-md transition text-center disabled:opacity-50 disabled:cursor-not-allowed"
+                      >
+                        <span className="text-3xl font-extrabold text-blue-600 block mb-1">
+                          {level}
+                        </span>
+                        <span className="text-xs text-gray-500">
+                          Practice Sets & Questions
+                        </span>
+                      </button>
+                    ),
+                  )}
+                </div>
+              </div>
+            )}
+
+            {/* STEP 2: SELECT MODE */}
+            {selectedLevel && !selectedMode && !loading && (
+              <div className="max-w-3xl mx-auto">
+                <div className="flex justify-between items-center mb-6">
+                  <button
+                    onClick={() => setSelectedLevel(null)}
+                    className="text-sm font-medium text-gray-500 hover:text-gray-800 underline"
+                  >
+                    &larr; Choose Different Level
+                  </button>
+                  <span className="px-4 py-1.5 bg-blue-100 text-blue-800 text-sm font-bold rounded-full">
+                    Level {selectedLevel}
+                  </span>
+                </div>
+
+                <h2 className="text-xl font-bold text-gray-900 mb-4">
+                  Choose Practice Mode
+                </h2>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4 mb-8">
+                  <button
+                    onClick={() => startQuiz("VOCABULARY")}
+                    className="p-5 bg-white border border-gray-200 rounded-xl hover:border-blue-500 hover:shadow-md transition text-left"
+                  >
+                    <div className="text-xl mb-1">📝</div>
+                    <h3 className="font-bold text-gray-900">Vocabulary</h3>
+                    <p className="text-xs text-gray-500 mt-1">
+                      10s timed per question full deck drill
+                    </p>
+                  </button>
+
+                  <button
+                    onClick={() => startQuiz("KANJI")}
+                    className="p-5 bg-white border border-gray-200 rounded-xl hover:border-blue-500 hover:shadow-md transition text-left"
+                  >
+                    <div className="text-xl mb-1">漢</div>
+                    <h3 className="font-bold text-gray-900">Kanji</h3>
+                    <p className="text-xs text-gray-500 mt-1">
+                      10s timed per question full deck drill
+                    </p>
+                  </button>
+
+                  <button
+                    onClick={() => startQuiz("GRAMMAR")}
+                    className="p-5 bg-white border border-gray-200 rounded-xl hover:border-blue-500 hover:shadow-md transition text-left"
+                  >
+                    <div className="text-xl mb-1">⛩️</div>
+                    <h3 className="font-bold text-gray-900">Grammar</h3>
+                    <p className="text-xs text-gray-500 mt-1">
+                      10s timed per question full deck drill
+                    </p>
+                  </button>
+
+                  {/* CLASSROOM DRILLS CARD */}
+                  {selectedLevel === "N4" && (
+                    <button
+                      onClick={() => setView("CLASSROOM_HUB")}
+                      className="p-5 bg-gradient-to-br from-blue-50 to-indigo-50 border border-blue-200 rounded-xl hover:border-blue-500 hover:shadow-md transition text-left"
+                    >
+                      <div className="text-xl mb-1">🏫</div>
+                      <h3 className="font-bold text-blue-900">
+                        Classroom Drills
+                      </h3>
+                      <p className="text-xs text-blue-600 mt-1">
+                        Textbook chapters & active typing
+                      </p>
+                    </button>
+                  )}
+                </div>
+              </div>
+            )}
+          </>
+        )}
+
+        {/* VIEW 2: CLASSROOM HUB */}
+        {view === "CLASSROOM_HUB" && (
+          <ClassroomDrillsHub
+            onBack={() => setView("MAIN")}
+            onStartQuiz={handleStartClassroomQuiz}
+            selectedLevel={selectedLevel || undefined}
+          />
+        )}
+
+        {/* VIEW 3: ACTIVE QUIZ OR CLASSROOM DRILL */}
+        {(selectedMode || view === "QUIZ") &&
+          questions.length > 0 &&
+          !quizFinished && (
+            <div className="max-w-2xl mx-auto">
+              <div className="flex justify-between items-center mb-4">
                 <button
-                  key={level}
-                  onClick={() => setSelectedLevel(level)}
-                  disabled={level !== "N5" && level !== "N4"}
-                  className="p-6 bg-white border border-gray-200 rounded-xl shadow-sm hover:border-blue-500 hover:shadow-md transition text-center disabled:opacity-50 disabled:cursor-not-allowed"
+                  onClick={handleEndQuizEarly}
+                  className="px-3.5 py-1.5 bg-red-50 hover:bg-red-100 text-red-600 border border-red-200 text-xs font-semibold rounded-lg transition flex items-center gap-1.5"
                 >
-                  <span className="text-3xl font-extrabold text-blue-600 block mb-1">
-                    {level}
-                  </span>
-                  <span className="text-xs text-gray-500">
-                    Practice Sets & Questions
-                  </span>
+                  <span>🛑</span> End & Save Results
                 </button>
-              ))}
+
+                <div className="flex items-center gap-2">
+                  <span className="px-3 py-1 bg-red-100 text-red-700 text-xs font-bold rounded-full animate-pulse">
+                    ⏱️ {timeLeft}s Left
+                  </span>
+                  <span className="px-3 py-1 bg-blue-100 text-blue-800 text-xs font-semibold rounded-full">
+                    {currentQuestionIndex + 1} / {questions.length}
+                  </span>
+                </div>
+              </div>
+
+              <div className="w-full bg-gray-200 rounded-full h-2 mb-6 overflow-hidden">
+                <div
+                  className={`h-full transition-all duration-1000 ${
+                    timeLeft <= 3 ? "bg-red-500" : "bg-blue-600"
+                  }`}
+                  style={{ width: `${(timeLeft / 10) * 100}%` }}
+                ></div>
+              </div>
+
+              <QuizEngine
+                key={currentQuestionIndex}
+                questions={[questions[currentQuestionIndex]]}
+                onComplete={(score, total, answers) => {
+                  const selectedIdx = answers[0];
+                  handleAnswerSelect(selectedIdx);
+                }}
+              />
             </div>
-          </div>
-        )}
-
-        {/* STEP 2: SELECT MODE */}
-        {selectedLevel && !selectedMode && !loading && (
-          <div className="max-w-3xl mx-auto">
-            <div className="flex justify-between items-center mb-6">
-              <button
-                onClick={() => setSelectedLevel(null)}
-                className="text-sm font-medium text-gray-500 hover:text-gray-800 underline"
-              >
-                &larr; Choose Different Level
-              </button>
-              <span className="px-4 py-1.5 bg-blue-100 text-blue-800 text-sm font-bold rounded-full">
-                Level {selectedLevel}
-              </span>
-            </div>
-
-            <h2 className="text-xl font-bold text-gray-900 mb-4">
-              Choose Practice Mode
-            </h2>
-
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-8">
-              <button
-                onClick={() => startQuiz("VOCABULARY")}
-                className="p-5 bg-white border border-gray-200 rounded-xl hover:border-blue-500 hover:shadow-md transition text-left"
-              >
-                <div className="text-xl mb-1">📝</div>
-                <h3 className="font-bold text-gray-900">Vocabulary</h3>
-                <p className="text-xs text-gray-500 mt-1">
-                  10s timed per question full deck drill
-                </p>
-              </button>
-
-              <button
-                onClick={() => startQuiz("KANJI")}
-                className="p-5 bg-white border border-gray-200 rounded-xl hover:border-blue-500 hover:shadow-md transition text-left"
-              >
-                <div className="text-xl mb-1">漢</div>
-                <h3 className="font-bold text-gray-900">Kanji</h3>
-                <p className="text-xs text-gray-500 mt-1">
-                  10s timed per question full deck drill
-                </p>
-              </button>
-
-              <button
-                onClick={() => startQuiz("GRAMMAR")}
-                className="p-5 bg-white border border-gray-200 rounded-xl hover:border-blue-500 hover:shadow-md transition text-left"
-              >
-                <div className="text-xl mb-1">⛩️</div>
-                <h3 className="font-bold text-gray-900">Grammar</h3>
-                <p className="text-xs text-gray-500 mt-1">
-                  10s timed per question full deck drill
-                </p>
-              </button>
-            </div>
-          </div>
-        )}
+          )}
 
         {/* LOADING & ERROR STATES */}
         {loading && (
           <div className="text-center py-16 bg-white rounded-2xl border border-gray-100 shadow-sm">
             <div className="inline-block animate-spin rounded-full h-8 w-8 border-4 border-blue-600 border-t-transparent mb-4"></div>
             <p className="text-gray-600 font-medium">
-              Fetching full practice deck...
+              Fetching practice deck...
             </p>
           </div>
         )}
@@ -485,51 +575,7 @@ export default function PracticePage() {
           </div>
         )}
 
-        {/* STEP 3: ACTIVE QUIZ ENGINE */}
-        {selectedLevel && questions.length > 0 && !quizFinished && (
-          <div className="max-w-2xl mx-auto">
-            {/* Header with Save & Exit Action and Timer */}
-            <div className="flex justify-between items-center mb-4">
-              <button
-                onClick={handleEndQuizEarly}
-                className="px-3.5 py-1.5 bg-red-50 hover:bg-red-100 text-red-600 border border-red-200 text-xs font-semibold rounded-lg transition flex items-center gap-1.5"
-              >
-                <span>🛑</span> End & Save Results
-              </button>
-
-              <div className="flex items-center gap-2">
-                <span className="px-3 py-1 bg-red-100 text-red-700 text-xs font-bold rounded-full animate-pulse">
-                  ⏱️ {timeLeft}s Left
-                </span>
-                <span className="px-3 py-1 bg-blue-100 text-blue-800 text-xs font-semibold rounded-full">
-                  {currentQuestionIndex + 1} / {questions.length}
-                </span>
-              </div>
-            </div>
-
-            {/* Countdown Progress Bar */}
-            <div className="w-full bg-gray-200 rounded-full h-2 mb-6 overflow-hidden">
-              <div
-                className={`h-full transition-all duration-1000 ${
-                  timeLeft <= 3 ? "bg-red-500" : "bg-blue-600"
-                }`}
-                style={{ width: `${(timeLeft / 10) * 100}%` }}
-              ></div>
-            </div>
-
-            {/* Render Current Question with unique key to reset component selection state */}
-            <QuizEngine
-              key={currentQuestionIndex}
-              questions={[questions[currentQuestionIndex]]}
-              onComplete={(score, total, answers) => {
-                const selectedIdx = answers[0];
-                handleAnswerSelect(selectedIdx);
-              }}
-            />
-          </div>
-        )}
-
-        {/* SCORE MODAL - DISPLAY RESULTS ON FINISH OR EARLY EXIT */}
+        {/* SCORE REVIEW MODAL */}
         {quizFinished && (
           <ScoreReviewModal
             questions={questions.slice(
