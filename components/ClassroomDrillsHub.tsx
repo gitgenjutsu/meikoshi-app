@@ -450,7 +450,7 @@ export default function ClassroomDrillsHub({
                 <input
                   type="file"
                   accept="image/*"
-                  capture="environment"
+                  // capture="environment"
                   multiple
                   onChange={handleFileChange}
                   className="text-xs text-gray-600 file:mr-3 file:py-2 file:px-3 file:rounded-lg file:border-0 file:text-xs file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100"
