@@ -25,7 +25,7 @@ export async function POST(req: Request) {
         return {
           inlineData: {
             data: base64Image,
-            mimeType: file.type,
+            mimeType: file.type || "image/jpeg",
           },
         };
       }),
@@ -42,7 +42,7 @@ export async function POST(req: Request) {
             properties: {
               word: {
                 type: SchemaType.STRING,
-                description: "Kanji or word in Japanese",
+                description: "ONLY Hiragana or Katakana reading (NO KANJI)",
               },
               reading: {
                 type: SchemaType.STRING,
@@ -53,7 +53,7 @@ export async function POST(req: Request) {
                 description: "English translation/meaning",
               },
             },
-            required: ["word", "meanings"],
+            required: ["word", "reading", "meanings"],
           },
         },
       },
@@ -62,20 +62,24 @@ export async function POST(req: Request) {
     const prompt = `
       Extract all vocabulary words across these ${files.length} textbook page(s) for Lesson ${chapterNumber}.
       Combine all words from all pages into a single flat array without duplicates.
-      For each word:
-      1. 'word': The Japanese kanji/word as written.
-      2. 'reading': Hiragana/Katakana reading.
-      3. 'meanings': Concise English translation.
+      
+      CRITICAL INSTRUCTION FOR VOCABULARY DRILLS:
+      - Do NOT output Kanji in the 'word' field. 
+      - Convert all Japanese words into pure Hiragana or Katakana. 
+      - Both 'word' and 'reading' must contain ONLY Hiragana or Katakana strings (e.g., "たべます", "バス", "おくります").
+      - 'meanings': Concise English translation (e.g., "to eat", "bus", "to send").
     `;
 
     const result = await model.generateContent([prompt, ...imageParts]);
     const extractedVocab = JSON.parse(result.response.text());
 
+    // Map extracted items and ensure fallback strips Kanji if any slips through
     const formattedRows = extractedVocab.map((item: any) => ({
       level,
       lesson_number: Number(chapterNumber),
-      word: item.word,
-      reading: item.reading || null,
+      // Prefer reading over word to strictly enforce Kana
+      word: item.reading || item.word,
+      reading: item.reading || item.word,
       meanings: item.meanings,
     }));
 

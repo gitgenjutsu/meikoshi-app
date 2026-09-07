@@ -152,20 +152,6 @@ export default function PracticePage() {
     });
 
     setFinalScore(calculatedScore);
-
-    if (selectedLevel) {
-      const totalAttempted = questions.length || 1;
-      const percentage = (calculatedScore / totalAttempted) * 100;
-
-      await supabase.from("jlpt_attempts").insert([
-        {
-          level: selectedLevel,
-          total_score: calculatedScore,
-          is_passed: percentage >= 60,
-          answers_json: finalAnswers,
-        },
-      ]);
-    }
   };
 
   const finishQuiz = () => {
@@ -201,21 +187,27 @@ export default function PracticePage() {
     vocabList: VocabularyRow[],
   ): Question[] => {
     return vocabList.map((item, idx) => {
-      const otherMeanings = vocabList
+      // 1. Gather readings (Hiragana/Katakana) from other vocabulary items as distractors
+      const otherReadings = vocabList
         .filter((_, i) => i !== idx)
-        .map((v) => v.meanings);
+        .map((v) => v.reading || v.word) // Fallback if reading is missing
+        .filter(Boolean);
 
-      const shuffledDistractors = [...otherMeanings]
+      // 2. Shuffle and pick 3 distractors
+      const shuffledDistractors = [...otherReadings]
         .sort(() => Math.random() - 0.5)
         .slice(0, 3);
 
       while (shuffledDistractors.length < 3) {
-        shuffledDistractors.push("Incorrect Option");
+        shuffledDistractors.push("ー");
       }
+
+      // 3. Determine correct answer (Hiragana/Katakana reading)
+      const correctAnswer = item.reading || item.word;
 
       const correctIndex = Math.floor(Math.random() * 4);
       const options = [...shuffledDistractors];
-      options.splice(correctIndex, 0, item.meanings);
+      options.splice(correctIndex, 0, correctAnswer);
 
       const exampleText = item.example_ja
         ? `Example: ${item.example_ja}${item.example_en ? ` (${item.example_en})` : ""}`
@@ -226,9 +218,10 @@ export default function PracticePage() {
         level: (selectedLevel || item.level || "N4") as JLPTLevel,
         section: "VOCABULARY",
         question_type: "MULTIPLE_CHOICE",
-        prompt_text: `Select the correct English meaning for "${item.word}".`,
-        question: item.word,
-        reading: item.reading,
+        // Prompt asks for Hiragana/Katakana matching the English meaning
+        prompt_text: `Select the correct Japanese reading (Hiragana/Katakana) for: "${item.meanings}"`,
+        question: item.meanings,
+        reading: null, // Omit reading field since reading is now in the options
         options,
         correct_option_index: correctIndex,
         explanation: exampleText,
