@@ -16,6 +16,58 @@ interface ImagePreview {
   url: string;
 }
 
+/**
+ * Client-side image compressor for mobile uploads.
+ * Downscales high-resolution camera photos to prevent Vercel payload limits & timeouts.
+ */
+const compressImage = (
+  file: File,
+  maxWidth = 1600,
+  quality = 0.8,
+): Promise<File> => {
+  return new Promise((resolve) => {
+    if (file.size < 1024 * 1024) {
+      resolve(file);
+      return;
+    }
+
+    const img = new Image();
+    img.src = URL.createObjectURL(file);
+    img.onload = () => {
+      const canvas = document.createElement("canvas");
+      let { width, height } = img;
+
+      if (width > maxWidth) {
+        height = Math.round((height * maxWidth) / width);
+        width = maxWidth;
+      }
+
+      canvas.width = width;
+      canvas.height = height;
+
+      const ctx = canvas.getContext("2d");
+      ctx?.drawImage(img, 0, 0, width, height);
+
+      canvas.toBlob(
+        (blob) => {
+          if (blob) {
+            const compressedFile = new File([blob], file.name, {
+              type: "image/jpeg",
+              lastModified: Date.now(),
+            });
+            resolve(compressedFile);
+          } else {
+            resolve(file);
+          }
+        },
+        "image/jpeg",
+        quality,
+      );
+    };
+    img.onerror = () => resolve(file);
+  });
+};
+
 export default function ClassroomDrillsHub({
   onBack,
   onStartQuiz,
@@ -48,7 +100,7 @@ export default function ClassroomDrillsHub({
     if (selectedSection) {
       fetchUploadedChapters(selectedSection);
     }
-  }, [selectedSection]);
+  }, [selectedSection, selectedLevel]);
 
   const fetchUploadedChapters = async (section: SectionType) => {
     setLoading(true);
@@ -85,7 +137,6 @@ export default function ClassroomDrillsHub({
       url: URL.createObjectURL(file),
     }));
 
-    // Append new selections to existing ones
     setSelectedImages((prev) => [...prev, ...newPreviews]);
   };
 
@@ -93,10 +144,41 @@ export default function ClassroomDrillsHub({
   const handleRemoveImage = (indexToRemove: number) => {
     setSelectedImages((prev) => {
       const updated = [...prev];
-      URL.revokeObjectURL(updated[indexToRemove].url); // Clean up memory
+      URL.revokeObjectURL(updated[indexToRemove].url);
       updated.splice(indexToRemove, 1);
       return updated;
     });
+  };
+
+  // Delete a uploaded chapter directly from the UI
+  const handleDeleteChapter = async (
+    chapterNum: number,
+    e: React.MouseEvent,
+  ) => {
+    e.stopPropagation();
+
+    if (
+      !confirm(
+        `Are you sure you want to delete ${selectedLevel} Lesson ${chapterNum}?`,
+      )
+    ) {
+      return;
+    }
+
+    if (!selectedSection) return;
+    const { tableName, colName } = getSectionMetadata(selectedSection);
+
+    const { error } = await supabase
+      .from(tableName)
+      .delete()
+      .eq(colName, chapterNum)
+      .eq("level", selectedLevel);
+
+    if (error) {
+      alert(`Failed to delete lesson: ${error.message}`);
+    } else {
+      fetchUploadedChapters(selectedSection);
+    }
   };
 
   const handleSelectExistingChapter = async (chapterNum: number) => {
@@ -108,7 +190,8 @@ export default function ClassroomDrillsHub({
     const { data, error } = await supabase
       .from(tableName)
       .select("*")
-      .eq(colName, chapterNum);
+      .eq(colName, chapterNum)
+      .eq("level", selectedLevel);
 
     if (error || !data || data.length === 0) {
       alert("Error loading chapter data.");
@@ -137,7 +220,7 @@ export default function ClassroomDrillsHub({
 
         return {
           id: item.id || String(idx),
-          level: item.level || "N5",
+          level: item.level || selectedLevel,
           section: "VOCABULARY",
           question_type: "MULTIPLE_CHOICE",
           prompt_text: `Select the correct English meaning for "${item.word}".`,
@@ -178,9 +261,11 @@ export default function ClassroomDrillsHub({
       formData.append("chapterNumber", String(chNum));
       formData.append("level", selectedLevel);
 
-      selectedImages.forEach((img) => {
-        formData.append("files", img.file);
-      });
+      // Compress mobile photos on-the-fly before uploading
+      for (const img of selectedImages) {
+        const compressedFile = await compressImage(img.file);
+        formData.append("files", compressedFile);
+      }
 
       const res = await fetch("/api/extract-vocab", {
         method: "POST",
@@ -214,10 +299,8 @@ export default function ClassroomDrillsHub({
       setSelectedImages([]);
       setChapterInput("");
 
-      // Refresh available lessons grid so Lesson L{chNum} appears as a clickable card
+      // Refresh available lessons grid
       await fetchUploadedChapters(selectedSection);
-
-      // Note: Removed automatic handleSelectExistingChapter(chNum) call
     } catch (err: any) {
       console.error("Processing Error:", err);
       alert(`Error processing textbook images: ${err.message}`);
@@ -238,7 +321,7 @@ export default function ClassroomDrillsHub({
           {selectedSection ? "Back to Section Selection" : "Back to Main Menu"}
         </button>
         <span className="px-4 py-1.5 bg-blue-100 text-blue-800 text-sm font-bold rounded-full">
-          Classroom Drills
+          Classroom Drills ({selectedLevel})
         </span>
       </div>
 
@@ -295,7 +378,7 @@ export default function ClassroomDrillsHub({
           {/* MULTI-PAGE UPLOAD FORM */}
           <div className="bg-white p-6 rounded-2xl border border-gray-200 shadow-sm">
             <h3 className="text-lg font-bold text-gray-900 mb-1">
-              Add / Upload New Chapter
+              Add / Upload New Chapter ({selectedLevel})
             </h3>
             <p className="text-xs text-gray-500 mb-6">
               Enter the lesson number and upload one or more textbook page
@@ -312,7 +395,7 @@ export default function ClassroomDrillsHub({
                   placeholder="e.g. 26"
                   value={chapterInput}
                   onChange={(e) => setChapterInput(e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  className="w-full px-3 py-2 border border-gray-300 text-gray-700 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
                 />
               </div>
 
@@ -377,7 +460,7 @@ export default function ClassroomDrillsHub({
           {/* AVAILABLE LESSONS */}
           <div className="bg-white p-6 rounded-2xl border border-gray-200 shadow-sm">
             <h3 className="text-lg font-bold text-gray-900 mb-2">
-              Available Lessons ({selectedSection})
+              Available Lessons ({selectedSection} - {selectedLevel})
             </h3>
             <p className="text-xs text-gray-500 mb-4">
               Select an existing chapter to generate a random 20-question drill.
@@ -388,24 +471,31 @@ export default function ClassroomDrillsHub({
             ) : availableChapters.length > 0 ? (
               <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
                 {availableChapters.map((ch) => (
-                  <button
+                  <div
                     key={ch}
                     onClick={() => handleSelectExistingChapter(ch)}
-                    className="p-4 bg-blue-50/50 border border-blue-200 rounded-xl hover:bg-blue-600 hover:text-white transition text-center group"
+                    className="relative p-4 bg-blue-50/50 border border-blue-200 rounded-xl hover:bg-blue-600 hover:text-white transition text-center cursor-pointer group"
                   >
+                    <button
+                      onClick={(e) => handleDeleteChapter(ch, e)}
+                      className="absolute top-1.5 right-1.5 w-5 h-5 bg-red-100 hover:bg-red-600 text-red-600 hover:text-white rounded-full text-xs flex items-center justify-center opacity-0 group-hover:opacity-100 transition"
+                      title="Delete lesson"
+                    >
+                      ✕
+                    </button>
                     <span className="text-xs font-semibold block text-blue-500 group-hover:text-blue-100">
                       Lesson
                     </span>
                     <span className="text-xl font-black text-blue-900 group-hover:text-white">
                       L{ch}
                     </span>
-                  </button>
+                  </div>
                 ))}
               </div>
             ) : (
               <p className="text-sm text-gray-500 bg-gray-50 p-4 rounded-xl border border-dashed border-gray-300 text-center">
-                No uploaded lessons found for {selectedSection}. Upload your
-                first chapter above!
+                No uploaded lessons found for {selectedSection} ({selectedLevel}
+                ). Upload your first chapter above!
               </p>
             )}
           </div>
