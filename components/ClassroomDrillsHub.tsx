@@ -16,10 +16,12 @@ interface ImagePreview {
   url: string;
 }
 
-/**
- * Client-side image compressor for mobile uploads.
- * Downscales high-resolution camera photos to prevent Vercel payload limits & timeouts.
- */
+interface Toast {
+  id: number;
+  message: string;
+  type: "success" | "error" | "info";
+}
+
 const compressImage = (
   file: File,
   maxWidth = 1600,
@@ -79,12 +81,27 @@ export default function ClassroomDrillsHub({
   const [availableChapters, setAvailableChapters] = useState<number[]>([]);
   const [loading, setLoading] = useState(false);
 
-  // Upload Form States (Multi-image support)
+  // Upload Form States
   const [chapterInput, setChapterInput] = useState<string>("");
   const [selectedImages, setSelectedImages] = useState<ImagePreview[]>([]);
   const [isGenerating, setIsGenerating] = useState(false);
 
-  // Helper to map sections to correct database tables & chapter column names
+  // Toast Notification State
+  const [toast, setToast] = useState<Toast | null>(null);
+
+  const showToast = (
+    message: string,
+    type: "success" | "error" | "info" = "info",
+  ) => {
+    const id = Date.now();
+    setToast({ id, message, type });
+
+    // Auto dismiss after 4 seconds
+    setTimeout(() => {
+      setToast((current) => (current?.id === id ? null : current));
+    }, 4000);
+  };
+
   const getSectionMetadata = (section: SectionType) => {
     switch (section) {
       case "VOCAB":
@@ -123,11 +140,11 @@ export default function ClassroomDrillsHub({
       setAvailableChapters(uniqueChapters);
     } else if (error) {
       console.error("Error fetching chapters:", error);
+      showToast("Failed to fetch available chapters.", "error");
     }
     setLoading(false);
   };
 
-  // Handle Multi-file Selection
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (!e.target.files) return;
 
@@ -140,7 +157,6 @@ export default function ClassroomDrillsHub({
     setSelectedImages((prev) => [...prev, ...newPreviews]);
   };
 
-  // Remove individual image from selection
   const handleRemoveImage = (indexToRemove: number) => {
     setSelectedImages((prev) => {
       const updated = [...prev];
@@ -150,7 +166,6 @@ export default function ClassroomDrillsHub({
     });
   };
 
-  // Delete a uploaded chapter directly from the UI
   const handleDeleteChapter = async (
     chapterNum: number,
     e: React.MouseEvent,
@@ -175,8 +190,9 @@ export default function ClassroomDrillsHub({
       .eq("level", selectedLevel);
 
     if (error) {
-      alert(`Failed to delete lesson: ${error.message}`);
+      showToast(`Failed to delete lesson: ${error.message}`, "error");
     } else {
+      showToast(`Lesson L${chapterNum} deleted successfully.`, "success");
       fetchUploadedChapters(selectedSection);
     }
   };
@@ -194,7 +210,7 @@ export default function ClassroomDrillsHub({
       .eq("level", selectedLevel);
 
     if (error || !data || data.length === 0) {
-      alert("Error loading chapter data.");
+      showToast("Error loading chapter data.", "error");
       setLoading(false);
       return;
     }
@@ -243,14 +259,15 @@ export default function ClassroomDrillsHub({
     const chNum = parseInt(chapterInput.trim(), 10);
 
     if (selectedImages.length === 0 || isNaN(chNum) || chNum <= 0) {
-      alert(
-        "Please enter a valid chapter number and upload at least one image.",
+      showToast(
+        "Please enter a valid chapter number and select images.",
+        "error",
       );
       return;
     }
 
     if (!selectedSection) {
-      alert("Please select a section first.");
+      showToast("Please select a section first.", "error");
       return;
     }
 
@@ -261,7 +278,6 @@ export default function ClassroomDrillsHub({
       formData.append("chapterNumber", String(chNum));
       formData.append("level", selectedLevel);
 
-      // Compress mobile photos on-the-fly before uploading
       for (const img of selectedImages) {
         const compressedFile = await compressImage(img.file);
         formData.append("files", compressedFile);
@@ -282,7 +298,6 @@ export default function ClassroomDrillsHub({
 
       const { tableName } = getSectionMetadata(selectedSection);
 
-      // Save extracted items to Supabase
       const { data: insertedData, error: dbError } = await supabase
         .from(tableName)
         .insert(result.data)
@@ -290,27 +305,56 @@ export default function ClassroomDrillsHub({
 
       if (dbError) throw dbError;
 
-      alert(
-        `Successfully extracted & saved ${insertedData.length} items for ${selectedLevel} Lesson ${chNum}!`,
+      showToast(
+        `Saved ${insertedData.length} items for ${selectedLevel} Lesson ${chNum}!`,
+        "success",
       );
 
-      // Clear uploaded file state & inputs
       selectedImages.forEach((img) => URL.revokeObjectURL(img.url));
       setSelectedImages([]);
       setChapterInput("");
 
-      // Refresh available lessons grid
       await fetchUploadedChapters(selectedSection);
     } catch (err: any) {
       console.error("Processing Error:", err);
-      alert(`Error processing textbook images: ${err.message}`);
+      showToast(`Error: ${err.message}`, "error");
     } finally {
       setIsGenerating(false);
     }
   };
 
   return (
-    <div className="max-w-3xl mx-auto">
+    <div className="max-w-3xl mx-auto relative pb-12">
+      {/* FLOATING TOAST NOTIFICATION */}
+      {toast && (
+        <div className="fixed top-5 right-5 z-50 transition-all duration-300 animate-slide-in">
+          <div
+            className={`flex items-center gap-3 px-4 py-3 rounded-xl shadow-lg border text-sm font-medium ${
+              toast.type === "success"
+                ? "bg-green-50 text-green-800 border-green-200"
+                : toast.type === "error"
+                  ? "bg-red-50 text-red-800 border-red-200"
+                  : "bg-blue-50 text-blue-800 border-blue-200"
+            }`}
+          >
+            <span>
+              {toast.type === "success"
+                ? "✅"
+                : toast.type === "error"
+                  ? "⚠️"
+                  : "ℹ️"}
+            </span>
+            <span>{toast.message}</span>
+            <button
+              onClick={() => setToast(null)}
+              className="ml-2 text-xs opacity-60 hover:opacity-100"
+            >
+              ✕
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Header Navigation */}
       <div className="flex justify-between items-center mb-6">
         <button
