@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 
 export interface Question {
   id: string;
@@ -19,6 +19,8 @@ export interface Question {
 
 interface QuizEngineProps {
   questions: Question[];
+  initialSelectedOption?: number;
+  onSelectOption?: (optionIndex: number) => void;
   onComplete: (
     score: number,
     total: number,
@@ -26,14 +28,32 @@ interface QuizEngineProps {
   ) => void;
 }
 
-export default function QuizEngine({ questions, onComplete }: QuizEngineProps) {
+export default function QuizEngine({
+  questions,
+  initialSelectedOption,
+  onSelectOption,
+  onComplete,
+}: QuizEngineProps) {
   const [currentIndex, setCurrentIndex] = useState(0);
+
+  // Initialize state with initialSelectedOption if passed from parent
   const [selectedAnswers, setSelectedAnswers] = useState<{
     [key: number]: number;
-  }>({});
-  const [timeLeft, setTimeLeft] = useState(20 * 60); // 20 minutes
+  }>(initialSelectedOption !== undefined ? { 0: initialSelectedOption } : {});
 
-  // Format markdown bold (**text**) to styled JSX
+  const selectedAnswersRef = useRef(selectedAnswers);
+
+  useEffect(() => {
+    selectedAnswersRef.current = selectedAnswers;
+  }, [selectedAnswers]);
+
+  // Sync state if initialSelectedOption changes from parent props
+  useEffect(() => {
+    if (initialSelectedOption !== undefined) {
+      setSelectedAnswers({ 0: initialSelectedOption });
+    }
+  }, [initialSelectedOption]);
+
   const renderFormattedPrompt = (text: string) => {
     const parts = text.split(/(\*\*.*?\*\*)/g);
     return parts.map((part, index) => {
@@ -51,35 +71,40 @@ export default function QuizEngine({ questions, onComplete }: QuizEngineProps) {
     });
   };
 
-  useEffect(() => {
-    if (timeLeft <= 0) return;
-    const timer = setInterval(() => setTimeLeft((prev) => prev - 1), 1000);
-    return () => clearInterval(timer);
-  }, [timeLeft]);
-
   const currentQ = questions[currentIndex];
 
   const handleSelectOption = (optionIndex: number) => {
-    setSelectedAnswers((prev) => ({
-      ...prev,
-      [currentIndex]: optionIndex,
-    }));
+    // 1. Update internal state
+    setSelectedAnswers((prev) => {
+      const updated = { ...prev, [currentIndex]: optionIndex };
+      selectedAnswersRef.current = updated;
+      return updated;
+    });
+
+    // 2. Report selection immediately back to parent PracticePage state
+    if (onSelectOption) {
+      onSelectOption(optionIndex);
+    }
   };
 
   const handleSubmit = () => {
     let score = 0;
+    const currentAnswers = selectedAnswersRef.current;
+
     questions.forEach((q, idx) => {
-      if (selectedAnswers[idx] === q.correct_option_index) {
+      if (currentAnswers[idx] === q.correct_option_index) {
         score += 1;
       }
     });
-    onComplete(score, questions.length, selectedAnswers);
+
+    onComplete(score, questions.length, currentAnswers);
   };
+
   if (!currentQ) return null;
 
   return (
     <div className="bg-white border border-gray-200 rounded-2xl p-6 sm:p-8 shadow-sm max-w-2xl mx-auto text-gray-900">
-      {/* Audio Player (if present) */}
+      {/* Audio Player */}
       {currentQ.audio_url && (
         <div className="mb-6 p-4 bg-blue-50 border border-blue-200 rounded-xl">
           <p className="text-xs font-bold text-blue-800 uppercase tracking-wider mb-2">
@@ -143,21 +168,12 @@ export default function QuizEngine({ questions, onComplete }: QuizEngineProps) {
           Previous
         </button>
 
-        {currentIndex === questions.length - 1 ? (
-          <button
-            onClick={handleSubmit}
-            className="px-6 py-2.5 rounded-lg bg-green-600 hover:bg-green-700 text-white text-sm font-semibold shadow-sm transition"
-          >
-            Next
-          </button>
-        ) : (
-          <button
-            onClick={() => setCurrentIndex((prev) => prev + 1)}
-            className="px-6 py-2.5 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold shadow-sm transition"
-          >
-            Next
-          </button>
-        )}
+        <button
+          onClick={handleSubmit}
+          className="px-6 py-2.5 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold shadow-sm transition"
+        >
+          {currentIndex === questions.length - 1 ? "Submit Question" : "Next"}
+        </button>
       </div>
     </div>
   );

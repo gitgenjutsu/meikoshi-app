@@ -118,31 +118,35 @@ export default function PracticePage() {
   };
 
   const handleAnswerSelect = (optionIndex: number) => {
-    setUserAnswers((prev) => ({
-      ...prev,
-      [currentQuestionIndex]: optionIndex,
-    }));
+    setUserAnswers((prev) => {
+      const updated = {
+        ...prev,
+        [currentQuestionIndex]: optionIndex,
+      };
+
+      // If this was the last question, immediately finish quiz with updated answers
+      if (currentQuestionIndex + 1 >= questions.length) {
+        finishQuizWithAnswers(updated);
+      }
+      return updated;
+    });
 
     if (currentQuestionIndex + 1 < questions.length) {
       setCurrentQuestionIndex((prev) => prev + 1);
-    } else {
-      finishQuiz();
     }
   };
 
-  const handleEndQuizEarly = () => {
-    finishQuiz();
-  };
-
-  const finishQuiz = async () => {
+  const finishQuizWithAnswers = async (finalAnswers: {
+    [key: number]: number;
+  }) => {
     setQuizFinished(true);
 
-    const answeredIndices = Object.keys(userAnswers);
+    const answeredIndices = Object.keys(finalAnswers);
     let calculatedScore = 0;
 
     answeredIndices.forEach((key) => {
       const idx = Number(key);
-      if (userAnswers[idx] === questions[idx]?.correct_option_index) {
+      if (finalAnswers[idx] === questions[idx]?.correct_option_index) {
         calculatedScore++;
       }
     });
@@ -150,7 +154,7 @@ export default function PracticePage() {
     setFinalScore(calculatedScore);
 
     if (selectedLevel) {
-      const totalAttempted = answeredIndices.length || 1;
+      const totalAttempted = questions.length || 1;
       const percentage = (calculatedScore / totalAttempted) * 100;
 
       await supabase.from("jlpt_attempts").insert([
@@ -158,10 +162,18 @@ export default function PracticePage() {
           level: selectedLevel,
           total_score: calculatedScore,
           is_passed: percentage >= 60,
-          answers_json: userAnswers,
+          answers_json: finalAnswers,
         },
       ]);
     }
+  };
+
+  const finishQuiz = () => {
+    finishQuizWithAnswers(userAnswers);
+  };
+
+  const handleEndQuizEarly = () => {
+    finishQuiz();
   };
 
   const fetchTestSets = async (level: JLPTLevel) => {
@@ -545,9 +557,23 @@ export default function PracticePage() {
               <QuizEngine
                 key={currentQuestionIndex}
                 questions={[questions[currentQuestionIndex]]}
+                initialSelectedOption={userAnswers[currentQuestionIndex]}
+                onSelectOption={(optionIndex) => {
+                  // Instantly commit answer in parent state without advancing
+                  setUserAnswers((prev) => ({
+                    ...prev,
+                    [currentQuestionIndex]: optionIndex,
+                  }));
+                }}
                 onComplete={(score, total, answers) => {
                   const selectedIdx = answers[0];
-                  handleAnswerSelect(selectedIdx);
+                  if (selectedIdx !== undefined) {
+                    handleAnswerSelect(selectedIdx);
+                  } else if (userAnswers[currentQuestionIndex] !== undefined) {
+                    handleAnswerSelect(userAnswers[currentQuestionIndex]);
+                  } else {
+                    handleAutoNext();
+                  }
                 }}
               />
             </div>
