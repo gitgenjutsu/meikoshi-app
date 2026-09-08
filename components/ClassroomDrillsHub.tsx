@@ -53,11 +53,23 @@ export default function ClassroomDrillsHub({
   const getSectionMetadata = (section: SectionType) => {
     switch (section) {
       case "VOCAB":
-        return { tableName: "jlpt_vocabulary", colName: "lesson_number" };
+        return {
+          tableName: "jlpt_vocabulary",
+          colName: "lesson_number",
+          apiRoute: "/api/extract-vocab",
+        };
       case "KANJI":
-        return { tableName: "jlpt_classroom_kanji", colName: "chapter" };
+        return {
+          tableName: "jlpt_kanji",
+          colName: "lesson_number",
+          apiRoute: "/api/extract-kanji",
+        };
       case "KAIWA":
-        return { tableName: "jlpt_classroom_kaiwa", colName: "chapter" };
+        return {
+          tableName: "jlpt_kaiwa",
+          colName: "lesson_number",
+          apiRoute: "/api/extract-kaiwa",
+        };
     }
   };
 
@@ -166,21 +178,17 @@ export default function ClassroomDrillsHub({
     let quizData = data;
     if (selectedSection === "VOCAB") {
       quizData = data.map((item, idx) => {
-        // Correct Japanese answer from your DB columns
         const correctJapanese = item.word || item.reading;
 
-        // Extract other Japanese words from the same chapter to use as wrong choices (distractors)
         const otherJapaneseWords = data
           .filter((_, i) => i !== idx)
           .map((v) => v.word || v.reading)
           .filter((val): val is string => Boolean(val));
 
-        // Randomly pick 3 distractor words
         const shuffledDistractors = [...otherJapaneseWords]
           .sort(() => Math.random() - 0.5)
           .slice(0, 3);
 
-        // Fallbacks if the lesson has fewer than 4 total words uploaded
         const fallbacks = ["ともだち", "せんせい", "がくせい", "ほん"];
         let fallbackIdx = 0;
         while (shuffledDistractors.length < 3) {
@@ -188,7 +196,6 @@ export default function ClassroomDrillsHub({
           fallbackIdx++;
         }
 
-        // Place the correct Japanese word at a random index (0 to 3)
         const correctIndex = Math.floor(Math.random() * 4);
         const options = [...shuffledDistractors];
         options.splice(correctIndex, 0, correctJapanese);
@@ -199,9 +206,48 @@ export default function ClassroomDrillsHub({
           section: "VOCABULARY",
           question_type: "MULTIPLE_CHOICE",
           prompt_text: `Select the correct Japanese reading (Hiragana/Katakana) for: "${item.meanings}"`,
-          question: item.meanings, // English meaning shown in prompt/card header
-          reading: correctJapanese, // Japanese word solution
-          options: options, // Array of 4 JAPANESE options
+          question: item.meanings,
+          reading: correctJapanese,
+          options: options,
+          correct_option_index: correctIndex,
+        };
+      });
+    }
+
+    if (selectedSection === "KANJI") {
+      quizData = data.map((item, idx) => {
+        const correctCharacter = item.character;
+
+        const otherCharacters = data
+          .filter((_, i) => i !== idx)
+          .map((v) => v.character)
+          .filter((val): val is string => Boolean(val));
+
+        const shuffledDistractors = [...otherCharacters]
+          .sort(() => Math.random() - 0.5)
+          .slice(0, 3);
+
+        const fallbacks = ["日", "月", "木", "水", "火"];
+        let fallbackIdx = 0;
+        while (shuffledDistractors.length < 3) {
+          shuffledDistractors.push(fallbacks[fallbackIdx % fallbacks.length]);
+          fallbackIdx++;
+        }
+
+        const correctIndex = Math.floor(Math.random() * 4);
+        const options = [...shuffledDistractors];
+        options.splice(correctIndex, 0, correctCharacter);
+
+        return {
+          id: item.id || String(idx),
+          level: item.level || selectedLevel,
+          section: "KANJI",
+          question_type: "MULTIPLE_CHOICE",
+          prompt_text: `Select the correct Kanji character for: "${item.meanings}"`,
+          question: item.meanings,
+          reading:
+            item.reading || item.kunyomi || item.onyomi || item.character,
+          options,
           correct_option_index: correctIndex,
         };
       });
@@ -230,7 +276,7 @@ export default function ClassroomDrillsHub({
       return;
     }
 
-    const { tableName } = getSectionMetadata(selectedSection);
+    const { tableName, apiRoute } = getSectionMetadata(selectedSection);
 
     try {
       const { count, error: checkError } = await supabase
@@ -261,7 +307,8 @@ export default function ClassroomDrillsHub({
 
     try {
       const formData = new FormData();
-      formData.append("chapterNumber", String(chNum));
+      formData.append("lesson_number", String(chNum));
+      formData.append("chapterNumber", String(chNum)); // Fallback for backwards compatibility
       formData.append("level", selectedLevel);
 
       for (const img of selectedImages) {
@@ -269,26 +316,23 @@ export default function ClassroomDrillsHub({
         formData.append("files", compressedFile);
       }
 
-      const res = await fetch("/api/extract-vocab", {
+      // Calls /api/extract-kanji for KANJI or /api/extract-vocab for VOCAB dynamically
+      const res = await fetch(apiRoute, {
         method: "POST",
         body: formData,
       });
 
       const result = await res.json();
 
-      if (!result.success || !result.data) {
-        throw new Error("Failed to extract vocabulary from images.");
+      if (!res.ok || !result.success) {
+        throw new Error("Failed to extract items from images.");
       }
 
-      const { data: insertedData, error: dbError } = await supabase
-        .from(tableName)
-        .insert(result.data)
-        .select();
-
-      if (dbError) throw dbError;
+      const insertedCount =
+        result.count || (result.data ? result.data.length : 0);
 
       showToast(
-        `Saved ${insertedData.length} items for ${selectedLevel} Lesson ${chNum}!`,
+        `Saved ${insertedCount} items for ${selectedLevel} Lesson ${chNum}!`,
         "success",
       );
 
