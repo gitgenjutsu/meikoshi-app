@@ -2,8 +2,10 @@
 
 import React, { useState, useEffect } from "react";
 import { supabase } from "@/lib/supabaseClient";
-
-type SectionType = "VOCAB" | "KANJI" | "KAIWA";
+import { compressImage } from "@/lib/imageUtils";
+import { ChapterUploader, ImagePreview } from "./jlpt/ChapterUploader";
+import { AvailableLessons } from "./jlpt/AvailableLessons";
+import { SectionSelector, SectionType } from "./jlpt/SectionSelector";
 
 interface ClassroomDrillsHubProps {
   onBack: () => void;
@@ -11,64 +13,11 @@ interface ClassroomDrillsHubProps {
   selectedLevel?: string;
 }
 
-interface ImagePreview {
-  file: File;
-  url: string;
-}
-
 interface Toast {
   id: number;
   message: string;
   type: "success" | "error" | "info";
 }
-
-const compressImage = (
-  file: File,
-  maxWidth = 1600,
-  quality = 0.8,
-): Promise<File> => {
-  return new Promise((resolve) => {
-    if (file.size < 1024 * 1024) {
-      resolve(file);
-      return;
-    }
-
-    const img = new Image();
-    img.src = URL.createObjectURL(file);
-    img.onload = () => {
-      const canvas = document.createElement("canvas");
-      let { width, height } = img;
-
-      if (width > maxWidth) {
-        height = Math.round((height * maxWidth) / width);
-        width = maxWidth;
-      }
-
-      canvas.width = width;
-      canvas.height = height;
-
-      const ctx = canvas.getContext("2d");
-      ctx?.drawImage(img, 0, 0, width, height);
-
-      canvas.toBlob(
-        (blob) => {
-          if (blob) {
-            const compressedFile = new File([blob], file.name, {
-              type: "image/jpeg",
-              lastModified: Date.now(),
-            });
-            resolve(compressedFile);
-          } else {
-            resolve(file);
-          }
-        },
-        "image/jpeg",
-        quality,
-      );
-    };
-    img.onerror = () => resolve(file);
-  });
-};
 
 export default function ClassroomDrillsHub({
   onBack,
@@ -96,7 +45,6 @@ export default function ClassroomDrillsHub({
     const id = Date.now();
     setToast({ id, message, type });
 
-    // Auto dismiss after 4 seconds
     setTimeout(() => {
       setToast((current) => (current?.id === id ? null : current));
     }, 4000);
@@ -218,31 +166,42 @@ export default function ClassroomDrillsHub({
     let quizData = data;
     if (selectedSection === "VOCAB") {
       quizData = data.map((item, idx) => {
-        const otherMeanings = data
-          .filter((_, i) => i !== idx)
-          .map((v) => v.meanings);
+        // Correct Japanese answer from your DB columns
+        const correctJapanese = item.word || item.reading;
 
-        const shuffledDistractors = [...otherMeanings]
+        // Extract other Japanese words from the same chapter to use as wrong choices (distractors)
+        const otherJapaneseWords = data
+          .filter((_, i) => i !== idx)
+          .map((v) => v.word || v.reading)
+          .filter((val): val is string => Boolean(val));
+
+        // Randomly pick 3 distractor words
+        const shuffledDistractors = [...otherJapaneseWords]
           .sort(() => Math.random() - 0.5)
           .slice(0, 3);
 
+        // Fallbacks if the lesson has fewer than 4 total words uploaded
+        const fallbacks = ["ともだち", "せんせい", "がくせい", "ほん"];
+        let fallbackIdx = 0;
         while (shuffledDistractors.length < 3) {
-          shuffledDistractors.push("Incorrect Meaning");
+          shuffledDistractors.push(fallbacks[fallbackIdx % fallbacks.length]);
+          fallbackIdx++;
         }
 
+        // Place the correct Japanese word at a random index (0 to 3)
         const correctIndex = Math.floor(Math.random() * 4);
         const options = [...shuffledDistractors];
-        options.splice(correctIndex, 0, item.meanings);
+        options.splice(correctIndex, 0, correctJapanese);
 
         return {
           id: item.id || String(idx),
           level: item.level || selectedLevel,
           section: "VOCABULARY",
           question_type: "MULTIPLE_CHOICE",
-          prompt_text: `Select the correct English meaning for "${item.word}".`,
-          question: item.word,
-          reading: item.reading,
-          options,
+          prompt_text: `Select the correct Japanese reading (Hiragana/Katakana) for: "${item.meanings}"`,
+          question: item.meanings, // English meaning shown in prompt/card header
+          reading: correctJapanese, // Japanese word solution
+          options: options, // Array of 4 JAPANESE options
           correct_option_index: correctIndex,
         };
       });
@@ -273,7 +232,6 @@ export default function ClassroomDrillsHub({
 
     const { tableName } = getSectionMetadata(selectedSection);
 
-    // 2. Pre-Check: Check if Lesson Already Exists in Database
     try {
       const { count, error: checkError } = await supabase
         .from(tableName)
@@ -291,7 +249,7 @@ export default function ClassroomDrillsHub({
           `${selectedLevel} Lesson ${chNum} already exists in ${tableName}!`,
           "error",
         );
-        return; // Stop execution before setting isGenerating to true or calling LLM API
+        return;
       }
     } catch (err: any) {
       console.error("Duplicate Check Error:", err);
@@ -299,7 +257,6 @@ export default function ClassroomDrillsHub({
       return;
     }
 
-    // 3. Proceed with Generation & API Call
     setIsGenerating(true);
 
     try {
@@ -320,9 +277,7 @@ export default function ClassroomDrillsHub({
       const result = await res.json();
 
       if (!result.success || !result.data) {
-        throw new Error(
-          result.error || "Failed to extract vocabulary from images.",
-        );
+        throw new Error("Failed to extract vocabulary from images.");
       }
 
       const { data: insertedData, error: dbError } = await supabase
@@ -398,179 +353,31 @@ export default function ClassroomDrillsHub({
 
       {/* STEP 1: SELECT SECTION CARD */}
       {!selectedSection && (
-        <div>
-          <h2 className="text-xl font-bold text-gray-900 mb-4">
-            Select Drill Section
-          </h2>
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-            <button
-              onClick={() => setSelectedSection("VOCAB")}
-              className="p-6 bg-white border border-gray-200 rounded-xl hover:border-blue-500 hover:shadow-md transition text-left"
-            >
-              <div className="text-2xl mb-2">📝</div>
-              <h3 className="font-bold text-gray-900 text-lg">Vocabulary</h3>
-              <p className="text-xs text-gray-500 mt-1">
-                Chapter-wise word drills with Kana/Romaji input
-              </p>
-            </button>
-
-            <button
-              onClick={() => setSelectedSection("KANJI")}
-              disabled
-              className="p-6 bg-white border border-gray-200 rounded-xl hover:border-blue-500 hover:shadow-md transition text-left opacity-50 cursor-not-allowed"
-            >
-              <div className="text-2xl mb-2">漢</div>
-              <h3 className="font-bold text-gray-900 text-lg">Kanji</h3>
-              <p className="text-xs text-gray-500 mt-1">
-                Chapter-wise character & reading practice
-              </p>
-            </button>
-
-            <button
-              disabled
-              onClick={() => setSelectedSection("KAIWA")}
-              className="p-6 bg-white border border-gray-200 rounded-xl hover:border-blue-500 hover:shadow-md transition text-left opacity-50 cursor-not-allowed"
-            >
-              <div className="text-2xl mb-2">💬</div>
-              <h3 className="font-bold text-gray-900 text-lg">
-                Kaiwa (Dialogue)
-              </h3>
-              <p className="text-xs text-gray-500 mt-1">
-                Conversation patterns & particle responses
-              </p>
-            </button>
-          </div>
-        </div>
+        <SectionSelector onSelectSection={(sec) => setSelectedSection(sec)} />
       )}
 
       {/* STEP 2: UPLOAD & GENERATE DRILL OR SELECT EXISTING LESSON */}
       {selectedSection && (
         <div className="space-y-8">
-          {/* MULTI-PAGE UPLOAD FORM */}
-          <div className="bg-white p-6 rounded-2xl border border-gray-200 shadow-sm">
-            <h3 className="text-lg font-bold text-gray-900 mb-1">
-              Add / Upload New Chapter ({selectedLevel})
-            </h3>
-            <p className="text-xs text-gray-500 mb-6">
-              Enter the lesson number and upload one or more textbook page
-              photos.
-            </p>
+          <ChapterUploader
+            selectedLevel={selectedLevel}
+            chapterInput={chapterInput}
+            setChapterInput={setChapterInput}
+            selectedImages={selectedImages}
+            onFileChange={handleFileChange}
+            onRemoveImage={handleRemoveImage}
+            onSaveAndGenerate={handleSaveAndGenerateDrill}
+            isGenerating={isGenerating}
+          />
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-6">
-              <div>
-                <label className="block text-xs font-bold text-gray-700 mb-1">
-                  Chapter Number
-                </label>
-                <input
-                  type="number"
-                  placeholder="e.g. 26"
-                  value={chapterInput}
-                  onChange={(e) => setChapterInput(e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-300 text-gray-700 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                />
-              </div>
-
-              <div>
-                <label className="block text-xs font-bold text-gray-700 mb-1">
-                  Upload Textbook Images (Multiple)
-                </label>
-                <input
-                  type="file"
-                  accept="image/*"
-                  // capture="environment"
-                  multiple
-                  onChange={handleFileChange}
-                  className="text-xs text-gray-600 file:mr-3 file:py-2 file:px-3 file:rounded-lg file:border-0 file:text-xs file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100"
-                />
-              </div>
-            </div>
-
-            {/* PREVIEW MULTIPLE IMAGES GRID */}
-            {selectedImages.length > 0 && (
-              <div className="mb-6">
-                <p className="text-xs font-bold text-gray-700 mb-2">
-                  Selected Pages ({selectedImages.length}):
-                </p>
-                <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-                  {selectedImages.map((img, idx) => (
-                    <div
-                      key={idx}
-                      className="relative group bg-gray-50 rounded-xl overflow-hidden border border-gray-200 h-36 flex items-center justify-center"
-                    >
-                      <img
-                        src={img.url}
-                        alt={`Page preview ${idx + 1}`}
-                        className="h-full w-full object-contain p-1"
-                      />
-                      <button
-                        onClick={() => handleRemoveImage(idx)}
-                        className="absolute top-1 right-1 bg-red-600 text-white rounded-full w-6 h-6 text-xs font-bold flex items-center justify-center opacity-80 hover:opacity-100 transition shadow"
-                        title="Remove image"
-                      >
-                        ✕
-                      </button>
-                      <span className="absolute bottom-1 left-1 bg-black/60 text-white text-[10px] px-1.5 py-0.5 rounded font-medium">
-                        Page {idx + 1}
-                      </span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            <button
-              onClick={handleSaveAndGenerateDrill}
-              disabled={isGenerating || selectedImages.length === 0}
-              className="w-full py-3 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-xl transition shadow-md disabled:opacity-50"
-            >
-              {isGenerating
-                ? `Processing ${selectedImages.length} Image(s)...`
-                : "⚡ Save & Generate Drill"}
-            </button>
-          </div>
-
-          {/* AVAILABLE LESSONS */}
-          <div className="bg-white p-6 rounded-2xl border border-gray-200 shadow-sm">
-            <h3 className="text-lg font-bold text-gray-900 mb-2">
-              Available Lessons ({selectedSection} - {selectedLevel})
-            </h3>
-            <p className="text-xs text-gray-500 mb-4">
-              Select an existing chapter to generate a random 20-question drill.
-            </p>
-
-            {loading ? (
-              <p className="text-xs text-gray-400">Loading chapters...</p>
-            ) : availableChapters.length > 0 ? (
-              <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
-                {availableChapters.map((ch) => (
-                  <div
-                    key={ch}
-                    onClick={() => handleSelectExistingChapter(ch)}
-                    className="relative p-4 bg-blue-50/50 border border-blue-200 rounded-xl hover:bg-blue-600 hover:text-white transition text-center cursor-pointer group"
-                  >
-                    <button
-                      onClick={(e) => handleDeleteChapter(ch, e)}
-                      className="absolute top-1.5 right-1.5 w-5 h-5 bg-red-100 hover:bg-red-600 text-red-600 hover:text-white rounded-full text-xs flex items-center justify-center opacity-0 group-hover:opacity-100 transition"
-                      title="Delete lesson"
-                    >
-                      ✕
-                    </button>
-                    <span className="text-xs font-semibold block text-blue-500 group-hover:text-blue-100">
-                      Lesson
-                    </span>
-                    <span className="text-xl font-black text-blue-900 group-hover:text-white">
-                      L{ch}
-                    </span>
-                  </div>
-                ))}
-              </div>
-            ) : (
-              <p className="text-sm text-gray-500 bg-gray-50 p-4 rounded-xl border border-dashed border-gray-300 text-center">
-                No uploaded lessons found for {selectedSection} ({selectedLevel}
-                ). Upload your first chapter above!
-              </p>
-            )}
-          </div>
+          <AvailableLessons
+            selectedSection={selectedSection}
+            selectedLevel={selectedLevel}
+            availableChapters={availableChapters}
+            loading={loading}
+            onSelectChapter={handleSelectExistingChapter}
+            onDeleteChapter={handleDeleteChapter}
+          />
         </div>
       )}
     </div>
