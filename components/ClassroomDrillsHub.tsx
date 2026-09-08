@@ -271,6 +271,35 @@ export default function ClassroomDrillsHub({
       return;
     }
 
+    const { tableName } = getSectionMetadata(selectedSection);
+
+    // 2. Pre-Check: Check if Lesson Already Exists in Database
+    try {
+      const { count, error: checkError } = await supabase
+        .from(tableName)
+        .select("id", { count: "exact", head: true })
+        .eq("lesson_number", chNum)
+        .eq("level", selectedLevel);
+
+      if (checkError) throw checkError;
+
+      if (count && count > 0) {
+        selectedImages.forEach((img) => URL.revokeObjectURL(img.url));
+        setSelectedImages([]);
+        setChapterInput("");
+        showToast(
+          `${selectedLevel} Lesson ${chNum} already exists in ${tableName}!`,
+          "error",
+        );
+        return; // Stop execution before setting isGenerating to true or calling LLM API
+      }
+    } catch (err: any) {
+      console.error("Duplicate Check Error:", err);
+      showToast(`Failed to verify existing lesson: ${err.message}`, "error");
+      return;
+    }
+
+    // 3. Proceed with Generation & API Call
     setIsGenerating(true);
 
     try {
@@ -295,8 +324,6 @@ export default function ClassroomDrillsHub({
           result.error || "Failed to extract vocabulary from images.",
         );
       }
-
-      const { tableName } = getSectionMetadata(selectedSection);
 
       const { data: insertedData, error: dbError } = await supabase
         .from(tableName)
