@@ -10,6 +10,42 @@ type JLPTLevel = "N5" | "N4" | "N3" | "N2" | "N1";
 type PracticeMode = "VOCABULARY" | "KANJI" | "GRAMMAR" | "FULL_EXAM";
 type ViewState = "MAIN" | "CLASSROOM_HUB" | "QUIZ";
 
+interface LevelConfig {
+  level: JLPTLevel;
+  title: string;
+  description: string;
+}
+
+const JLPT_LEVELS: LevelConfig[] = [
+  {
+    level: "N5",
+    title: "N5 Beginner",
+    description: "Basic Japanese, Hiragana, Katakana & foundational Kanji",
+  },
+  {
+    level: "N4",
+    title: "N4 Elementary",
+    description: "Basic daily conversations & essential everyday grammar",
+  },
+  {
+    level: "N3",
+    title: "N3 Intermediate",
+    description:
+      "Bridging basic to fluent comprehension in everyday situations",
+  },
+  {
+    level: "N2",
+    title: "N2 Upper-Intermediate",
+    description: "Business Japanese, news articles & complex interactions",
+  },
+  {
+    level: "N1",
+    title: "N1 Advanced",
+    description:
+      "Native-level fluency, complex literature & specialized topics",
+  },
+];
+
 interface TestSet {
   id: string;
   title: string;
@@ -187,13 +223,11 @@ export default function PracticePage() {
     vocabList: VocabularyRow[],
   ): Question[] => {
     return vocabList.map((item, idx) => {
-      // 1. Gather readings (Hiragana/Katakana) from other vocabulary items as distractors
       const otherReadings = vocabList
         .filter((_, i) => i !== idx)
-        .map((v) => v.reading || v.word) // Fallback if reading is missing
+        .map((v) => v.reading || v.word)
         .filter(Boolean);
 
-      // 2. Shuffle and pick 3 distractors
       const shuffledDistractors = [...otherReadings]
         .sort(() => Math.random() - 0.5)
         .slice(0, 3);
@@ -202,9 +236,7 @@ export default function PracticePage() {
         shuffledDistractors.push("ー");
       }
 
-      // 3. Determine correct answer (Hiragana/Katakana reading)
       const correctAnswer = item.reading || item.word;
-
       const correctIndex = Math.floor(Math.random() * 4);
       const options = [...shuffledDistractors];
       options.splice(correctIndex, 0, correctAnswer);
@@ -218,10 +250,9 @@ export default function PracticePage() {
         level: (selectedLevel || item.level || "N4") as JLPTLevel,
         section: "VOCABULARY",
         question_type: "MULTIPLE_CHOICE",
-        // Prompt asks for Hiragana/Katakana matching the English meaning
         prompt_text: `Select the correct Japanese reading (Hiragana/Katakana) for: "${item.meanings}"`,
         question: item.meanings,
-        reading: null, // Omit reading field since reading is now in the options
+        reading: null,
         options,
         correct_option_index: correctIndex,
         explanation: exampleText,
@@ -410,24 +441,32 @@ export default function PracticePage() {
                 <p className="text-center text-gray-600 mb-6">
                   Select your target JLPT level to begin
                 </p>
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 max-w-2xl mx-auto">
-                  {(["N5", "N4", "N3", "N2", "N1"] as JLPTLevel[]).map(
-                    (level) => (
+                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4 max-w-3xl mx-auto">
+                  {JLPT_LEVELS.map((item) => {
+                    const isAvailable =
+                      item.level === "N5" || item.level === "N4";
+
+                    return (
                       <button
-                        key={level}
-                        onClick={() => setSelectedLevel(level)}
-                        disabled={level !== "N5" && level !== "N4"}
-                        className="p-6 bg-white border border-gray-200 rounded-xl shadow-sm hover:border-blue-500 hover:shadow-md transition text-center disabled:opacity-50 disabled:cursor-not-allowed"
+                        key={item.level}
+                        onClick={() => setSelectedLevel(item.level)}
+                        disabled={!isAvailable}
+                        className="p-5 bg-white border border-gray-200 rounded-xl shadow-sm hover:border-blue-500 hover:shadow-md transition text-center flex flex-col items-center justify-between min-h-[140px] disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:border-gray-200 disabled:hover:shadow-none"
                       >
-                        <span className="text-3xl font-extrabold text-blue-600 block mb-1">
-                          {level}
-                        </span>
-                        <span className="text-xs text-gray-500">
-                          Practice Sets & Questions
+                        <div>
+                          <span className="text-3xl font-extrabold text-blue-600 block mb-1">
+                            {item.level}
+                          </span>
+                          <span className="text-sm font-semibold text-gray-800 block mb-1">
+                            {item.title}
+                          </span>
+                        </div>
+                        <span className="text-xs text-gray-500 leading-relaxed">
+                          {item.description}
                         </span>
                       </button>
-                    ),
-                  )}
+                    );
+                  })}
                 </div>
               </div>
             )}
@@ -552,7 +591,6 @@ export default function PracticePage() {
                 questions={[questions[currentQuestionIndex]]}
                 initialSelectedOption={userAnswers[currentQuestionIndex]}
                 onSelectOption={(optionIndex) => {
-                  // Instantly commit answer in parent state without advancing
                   setUserAnswers((prev) => ({
                     ...prev,
                     [currentQuestionIndex]: optionIndex,
