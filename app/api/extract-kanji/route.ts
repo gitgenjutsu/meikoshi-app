@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { GoogleGenerativeAI, SchemaType } from "@google/generative-ai";
+import { GoogleGenerativeAI, SchemaType, Schema } from "@google/generative-ai";
 import { createClient } from "@supabase/supabase-js";
 
 export const maxDuration = 60;
@@ -94,7 +94,7 @@ export async function POST(req: NextRequest) {
       model: "gemini-3.6-flash",
       generationConfig: {
         responseMimeType: "application/json",
-        responseSchema: kanjiSchema,
+        responseSchema: kanjiSchema as unknown as Schema,
       },
     });
 

@@ -215,41 +215,96 @@ export default function ClassroomDrillsHub({
     }
 
     if (selectedSection === "KANJI") {
-      quizData = data.map((item, idx) => {
-        const correctCharacter = item.character;
+      const questions: any[] = [];
 
-        const otherCharacters = data
+      data.forEach((item, idx) => {
+        const correctReading =
+          item.reading || item.kunyomi || item.onyomi || item.character;
+        const correctFullWord = item.example_ja || item.character;
+
+        // Collect options pools
+        const otherReadings = data
           .filter((_, i) => i !== idx)
-          .map((v) => v.character)
+          .map((v) => v.reading || v.kunyomi || v.onyomi)
           .filter((val): val is string => Boolean(val));
 
-        const shuffledDistractors = [...otherCharacters]
+        const otherFullWords = data
+          .filter((_, i) => i !== idx)
+          .map((v) => v.example_ja || v.character)
+          .filter((val): val is string => Boolean(val));
+
+        // -------------------------------------------------------------
+        // Question A: English Meaning -> Reading
+        // -------------------------------------------------------------
+        const distractorReadings = [...otherReadings]
           .sort(() => Math.random() - 0.5)
           .slice(0, 3);
-
-        const fallbacks = ["日", "月", "木", "水", "火"];
-        let fallbackIdx = 0;
-        while (shuffledDistractors.length < 3) {
-          shuffledDistractors.push(fallbacks[fallbackIdx % fallbacks.length]);
-          fallbackIdx++;
+        const fallbacksReading = ["みず", "ひと", "やま", "かわ"];
+        let fIdxR = 0;
+        while (distractorReadings.length < 3) {
+          distractorReadings.push(
+            fallbacksReading[fIdxR % fallbacksReading.length],
+          );
+          fIdxR++;
         }
+        const correctIdxA = Math.floor(Math.random() * 4);
+        const optionsA = [...distractorReadings];
+        optionsA.splice(correctIdxA, 0, correctReading);
 
-        const correctIndex = Math.floor(Math.random() * 4);
-        const options = [...shuffledDistractors];
-        options.splice(correctIndex, 0, correctCharacter);
-
-        return {
-          id: item.id || String(idx),
+        questions.push({
+          id: `${item.id || idx}-part1`,
           level: item.level || selectedLevel,
           section: "KANJI",
           question_type: "MULTIPLE_CHOICE",
-          prompt_text: `Select the correct Kanji character for: "${item.meanings}"`,
+          prompt_text: `[Part 1: Meaning → Reading] Select the correct reading in Hiragana/Katakana for: "${item.meanings}"`,
           question: item.meanings,
-          reading:
-            item.reading || item.kunyomi || item.onyomi || item.character,
-          options,
-          correct_option_index: correctIndex,
-        };
+          reading: correctReading,
+          options: optionsA,
+          correct_option_index: correctIdxA,
+        });
+
+        // -------------------------------------------------------------
+        // Question B: Reading -> Full Kanji Word
+        // -------------------------------------------------------------
+        const distractorWords = [...otherFullWords]
+          .sort(() => Math.random() - 0.5)
+          .slice(0, 3);
+        const fallbacksWord = ["水", "山", "人", "川"];
+        let fIdxW = 0;
+        while (distractorWords.length < 3) {
+          distractorWords.push(fallbacksWord[fIdxW % fallbacksWord.length]);
+          fIdxW++;
+        }
+        const correctIdxB = Math.floor(Math.random() * 4);
+        const optionsB = [...distractorWords];
+        optionsB.splice(correctIdxB, 0, correctFullWord);
+
+        questions.push({
+          id: `${item.id || idx}-part2`,
+          level: item.level || selectedLevel,
+          section: "KANJI",
+          question_type: "MULTIPLE_CHOICE",
+          prompt_text: `[Part 2: Reading → Kanji Word] Select the complete Kanji word for: "${correctReading}"`,
+          question: correctReading,
+          reading: correctFullWord,
+          options: optionsB,
+          correct_option_index: correctIdxB,
+        });
+      });
+
+      // Sort questions so all Part 1 questions come first, followed by Part 2 questions
+      quizData = questions.sort((a, b) => {
+        if (
+          a.prompt_text.startsWith("[Part 1") &&
+          b.prompt_text.startsWith("[Part 2")
+        )
+          return -1;
+        if (
+          a.prompt_text.startsWith("[Part 2") &&
+          b.prompt_text.startsWith("[Part 1")
+        )
+          return 1;
+        return 0;
       });
     }
 
