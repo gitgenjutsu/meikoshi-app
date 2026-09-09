@@ -147,7 +147,6 @@ export default function KaiwaDashboard({ exercises }: KaiwaDashboardProps) {
     };
   }, [isListening, timeLeft]);
 
-  // Speech Recognition Start/Stop
   const startListening = () => {
     const SpeechRecognition =
       (window as any).SpeechRecognition ||
@@ -158,6 +157,10 @@ export default function KaiwaDashboard({ exercises }: KaiwaDashboardProps) {
       return;
     }
 
+    const isMobile =
+      typeof window !== "undefined" &&
+      /Mobi|Android|iPhone|iPad/i.test(navigator.userAgent);
+
     setTranscript("");
     setScore(null);
     setFeedback("");
@@ -166,37 +169,62 @@ export default function KaiwaDashboard({ exercises }: KaiwaDashboardProps) {
 
     const recognition = new SpeechRecognition();
     recognition.lang = "ja-JP";
-    recognition.continuous = true;
-    recognition.interimResults = true;
+    recognition.continuous = !isMobile;
+    recognition.interimResults = false;
+
+    let fullTranscript = "";
 
     recognition.onresult = (event: any) => {
-      let currentTranscript = "";
-      for (let i = 0; i < event.results.length; i++) {
-        currentTranscript += event.results[i][0].transcript;
+      let latestTranscript = "";
+
+      for (let i = event.resultIndex; i < event.results.length; i++) {
+        if (event.results[i].isFinal) {
+          latestTranscript += event.results[i][0].transcript;
+        }
       }
-      setTranscript(currentTranscript);
+
+      const cleanText = latestTranscript.trim();
+      if (cleanText) {
+        fullTranscript = fullTranscript
+          ? `${fullTranscript} ${cleanText}`
+          : cleanText;
+        setTranscript(fullTranscript);
+      }
     };
 
-    recognition.onerror = (err: any) => {
-      console.error("Speech Error:", err);
-      stopListening();
+    // FIX 1: Ignore recoverable mobile speech recognition errors
+    recognition.onerror = (event: any) => {
+      if (event.error === "no-speech" || event.error === "aborted") {
+        return;
+      }
+      console.error("Speech Error:", event.error);
+      setIsListening(false);
     };
 
     recognition.onend = () => {
       setIsListening(false);
+      // Evaluate only if speech was actually captured
+      if (fullTranscript.trim()) {
+        evaluateSpeech(fullTranscript);
+      }
     };
 
     recognitionRef.current = recognition;
-    recognition.start();
+
+    try {
+      recognition.start();
+    } catch (err) {
+      console.error("Failed to start speech recognition:", err);
+      setIsListening(false);
+    }
   };
 
   const stopListening = () => {
     if (recognitionRef.current) {
-      recognitionRef.current.stop();
+      recognitionRef.current.stop(); // Triggers recognition.onend automatically
     }
     setIsListening(false);
     if (timerRef.current) clearTimeout(timerRef.current);
-    evaluateSpeech(transcript);
   };
 
   const resetPractice = () => {
