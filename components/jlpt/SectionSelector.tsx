@@ -40,9 +40,8 @@ export const SectionSelector: React.FC<SectionSelectorProps> = ({
         </button>
 
         <button
-          disabled
           onClick={() => onSelectSection("KAIWA")}
-          className="p-6 bg-white border border-gray-200 rounded-xl hover:border-blue-500 hover:shadow-md transition text-left opacity-50 cursor-not-allowed"
+          className="p-6 bg-white border border-gray-200 rounded-xl hover:border-blue-500 hover:shadow-md transition text-left"
         >
           <div className="text-2xl mb-2">💬</div>
           <h3 className="font-bold text-gray-900 text-lg">Kaiwa (Dialogue)</h3>

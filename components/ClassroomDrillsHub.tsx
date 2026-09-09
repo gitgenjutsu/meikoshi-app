@@ -6,6 +6,7 @@ import { compressImage } from "@/lib/imageUtils";
 import { ChapterUploader, ImagePreview } from "./jlpt/ChapterUploader";
 import { AvailableLessons } from "./jlpt/AvailableLessons";
 import { SectionSelector, SectionType } from "./jlpt/SectionSelector";
+import KaiwaDashboard from "./KaiwaDashboard";
 
 interface ClassroomDrillsHubProps {
   onBack: () => void;
@@ -29,6 +30,9 @@ export default function ClassroomDrillsHub({
   );
   const [availableChapters, setAvailableChapters] = useState<number[]>([]);
   const [loading, setLoading] = useState(false);
+
+  // Active Kaiwa Drill Session State (stores fetched exercises array)
+  const [kaiwaExercises, setKaiwaExercises] = useState<any[] | null>(null);
 
   // Upload Form States
   const [chapterInput, setChapterInput] = useState<string>("");
@@ -159,9 +163,28 @@ export default function ClassroomDrillsHub({
 
   const handleSelectExistingChapter = async (chapterNum: number) => {
     if (!selectedSection) return;
-    setLoading(true);
 
+    setLoading(true);
     const { tableName, colName } = getSectionMetadata(selectedSection);
+
+    // DIRECT ROUTE: Opening Kaiwa lesson fetches exercise data and renders KaiwaDashboard
+    if (selectedSection === "KAIWA") {
+      const { data, error } = await supabase
+        .from(tableName)
+        .select("*")
+        .eq(colName, chapterNum)
+        .eq("level", selectedLevel);
+
+      if (error || !data || data.length === 0) {
+        showToast("Error loading Kaiwa drill data.", "error");
+        setLoading(false);
+        return;
+      }
+
+      setKaiwaExercises(data);
+      setLoading(false);
+      return;
+    }
 
     const { data, error } = await supabase
       .from(tableName)
@@ -222,7 +245,6 @@ export default function ClassroomDrillsHub({
           item.reading || item.kunyomi || item.onyomi || item.character;
         const correctFullWord = item.example_ja || item.character;
 
-        // Collect options pools
         const otherReadings = data
           .filter((_, i) => i !== idx)
           .map((v) => v.reading || v.kunyomi || v.onyomi)
@@ -233,9 +255,6 @@ export default function ClassroomDrillsHub({
           .map((v) => v.example_ja || v.character)
           .filter((val): val is string => Boolean(val));
 
-        // -------------------------------------------------------------
-        // Question A: English Meaning -> Reading
-        // -------------------------------------------------------------
         const distractorReadings = [...otherReadings]
           .sort(() => Math.random() - 0.5)
           .slice(0, 3);
@@ -263,9 +282,6 @@ export default function ClassroomDrillsHub({
           correct_option_index: correctIdxA,
         });
 
-        // -------------------------------------------------------------
-        // Question B: Reading -> Full Kanji Word
-        // -------------------------------------------------------------
         const distractorWords = [...otherFullWords]
           .sort(() => Math.random() - 0.5)
           .slice(0, 3);
@@ -292,7 +308,6 @@ export default function ClassroomDrillsHub({
         });
       });
 
-      // Sort questions so all Part 1 questions come first, followed by Part 2 questions
       quizData = questions.sort((a, b) => {
         if (
           a.prompt_text.startsWith("[Part 1") &&
@@ -363,7 +378,7 @@ export default function ClassroomDrillsHub({
     try {
       const formData = new FormData();
       formData.append("lesson_number", String(chNum));
-      formData.append("chapterNumber", String(chNum)); // Fallback for backwards compatibility
+      formData.append("chapterNumber", String(chNum));
       formData.append("level", selectedLevel);
 
       for (const img of selectedImages) {
@@ -371,7 +386,6 @@ export default function ClassroomDrillsHub({
         formData.append("files", compressedFile);
       }
 
-      // Calls /api/extract-kanji for KANJI or /api/extract-vocab for VOCAB dynamically
       const res = await fetch(apiRoute, {
         method: "POST",
         body: formData,
@@ -380,7 +394,7 @@ export default function ClassroomDrillsHub({
       const result = await res.json();
 
       if (!res.ok || !result.success) {
-        throw new Error("Failed to extract items from images.");
+        throw new Error("Failed to process image with AI");
       }
 
       const insertedCount =
@@ -403,6 +417,21 @@ export default function ClassroomDrillsHub({
       setIsGenerating(false);
     }
   };
+
+  // IF ACTIVE KAIWA LESSON IS SELECTED: RENDER KAIWA DASHBOARD DIRECTLY
+  if (selectedSection === "KAIWA" && kaiwaExercises !== null) {
+    return (
+      <div className="max-w-4xl mx-auto space-y-4">
+        <button
+          onClick={() => setKaiwaExercises(null)}
+          className="text-sm font-semibold text-gray-600 hover:text-gray-900 flex items-center gap-1 transition"
+        >
+          &larr; Back to Kaiwa Lessons
+        </button>
+        <KaiwaDashboard exercises={kaiwaExercises} />
+      </div>
+    );
+  }
 
   return (
     <div className="max-w-3xl mx-auto relative pb-12">

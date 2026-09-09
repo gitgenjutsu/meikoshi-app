@@ -104,10 +104,10 @@ export default function ScoreReviewModal({
             const isCorrect = studentAns === q.correct_option_index;
 
             // Resolve correct answer text and explanation dynamically
-            const correctAnswerText = q.options[q.correct_option_index];
+            const correctAnswerText = q?.options[q?.correct_option_index];
             const explanationText =
-              q.explanation ||
-              q.explanation_en ||
+              q?.explanation ||
+              q?.explanation_en ||
               (q.meanings && q.meanings !== correctAnswerText
                 ? q.meanings
                 : null);

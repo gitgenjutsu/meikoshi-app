@@ -160,7 +160,6 @@ export default function PracticePage() {
         [currentQuestionIndex]: optionIndex,
       };
 
-      // If this was the last question, immediately finish quiz with updated answers
       if (currentQuestionIndex + 1 >= questions.length) {
         finishQuizWithAnswers(updated);
       }
@@ -554,7 +553,7 @@ export default function PracticePage() {
           />
         )}
 
-        {/* VIEW 3: ACTIVE QUIZ OR CLASSROOM DRILL */}
+        {/* VIEW 3: ACTIVE MULTIPLE CHOICE QUIZ */}
         {(selectedMode || view === "QUIZ") &&
           questions.length > 0 &&
           !quizFinished && (

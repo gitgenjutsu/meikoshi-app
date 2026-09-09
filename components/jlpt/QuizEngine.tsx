@@ -55,6 +55,8 @@ export default function QuizEngine({
   }, [initialSelectedOption]);
 
   const renderFormattedPrompt = (text: string) => {
+    if (!text) return null;
+
     const parts = text.split(/(\*\*.*?\*\*)/g);
     return parts.map((part, index) => {
       if (part.startsWith("**") && part.endsWith("**")) {
@@ -105,7 +107,7 @@ export default function QuizEngine({
   return (
     <div className="bg-white border border-gray-200 rounded-2xl p-6 sm:p-8 shadow-sm max-w-2xl mx-auto text-gray-900">
       {/* Audio Player */}
-      {currentQ.audio_url && (
+      {currentQ?.audio_url && (
         <div className="mb-6 p-4 bg-blue-50 border border-blue-200 rounded-xl">
           <p className="text-xs font-bold text-blue-800 uppercase tracking-wider mb-2">
             聴解 Audio
@@ -113,7 +115,7 @@ export default function QuizEngine({
           <audio
             controls
             controlsList="nodownload"
-            src={currentQ.audio_url}
+            src={currentQ?.audio_url}
             className="w-full"
           >
             Your browser does not support the audio element.
@@ -123,12 +125,12 @@ export default function QuizEngine({
 
       {/* Prompt Text */}
       <h2 className="text-xl sm:text-2xl font-medium text-gray-900 mb-8 leading-relaxed">
-        {renderFormattedPrompt(currentQ.prompt_text)}
+        {renderFormattedPrompt(currentQ?.prompt_text)}
       </h2>
 
       {/* Options List */}
       <div className="space-y-3 mb-8">
-        {currentQ.options.map((option, idx) => {
+        {currentQ?.options?.map((option, idx) => {
           const isSelected = selectedAnswers[currentIndex] === idx;
           return (
             <button
