@@ -26,7 +26,7 @@ export const AvailableLessons: React.FC<AvailableLessonsProps> = ({
         Available Lessons ({selectedSection} - {selectedLevel})
       </h3>
       <p className="text-xs text-gray-500 mb-4">
-        Select an existing chapter to generate a random 20-question drill.
+        Select an existing chapter to practice.
       </p>
 
       {loading ? (
