@@ -286,7 +286,6 @@ export default function KaiwaDashboard({ exercises }: KaiwaDashboardProps) {
           <span className="text-sm font-bold uppercase tracking-wide text-blue-600 bg-blue-50 px-3 py-1 rounded-full">
             Grammar: {currentExercise?.grammar_point}
           </span>
-          <span className="text-sm text-gray-500">15s Max Speaking Time</span>
         </div>
 
         {/* Variation Sub-Tabs (れい, 1, 2) */}
