@@ -27,15 +27,15 @@ const kanjiSchema = {
       },
       onyomi: {
         type: SchemaType.STRING,
-        description: "Onyomi in Katakana, or empty string",
+        description: "Onyomi in Katakana, e.g., スイ, or empty string if none",
       },
       kunyomi: {
         type: SchemaType.STRING,
-        description: "Kunyomi in Hiragana, or empty string",
+        description: "Kunyomi in Hiragana, e.g., みず, or empty string if none",
       },
       meanings: {
         type: SchemaType.STRING,
-        description: "English meanings separated by semicolons",
+        description: "English meanings separated by semicolons, e.g., water",
       },
       reading: {
         type: SchemaType.STRING,
@@ -45,50 +45,104 @@ const kanjiSchema = {
         type: SchemaType.INTEGER,
         description: "Number of strokes, default 0 if unknown",
       },
-      example_ja: {
-        type: SchemaType.STRING,
-        description: "Example word or sentence using the kanji",
-      },
-      example_en: {
-        type: SchemaType.STRING,
-        description: "English translation of the example",
+      vocabulary: {
+        type: SchemaType.ARRAY,
+        description:
+          "The 4 vocabulary words (単語) listed for this Kanji in the textbook",
+        items: {
+          type: SchemaType.OBJECT,
+          properties: {
+            word: {
+              type: SchemaType.STRING,
+              description: "Kanji vocabulary word, e.g., 水着",
+            },
+            reading: {
+              type: SchemaType.STRING,
+              description: "Kana reading in Hiragana/Katakana, e.g., みずぎ",
+            },
+            meaning: {
+              type: SchemaType.STRING,
+              description:
+                "English meaning of the vocabulary word, e.g., swimsuit",
+            },
+            example_ja: {
+              type: SchemaType.STRING,
+              description:
+                "Short example sentence in Japanese using the word, with HTML <ruby> and <rt> tags for Furigana.",
+            },
+            example_en: {
+              type: SchemaType.STRING,
+              description: "English translation of the example sentence.",
+            },
+          },
+          required: ["word", "reading", "meaning", "example_ja", "example_en"],
+        },
       },
     },
-    required: ["character", "meanings"],
+    required: ["character", "meanings", "vocabulary"],
   },
 };
 
 export async function POST(req: NextRequest) {
   try {
-    const formData = await req.formData();
-    const files = formData.getAll("files") as File[];
-    const level = (formData.get("level") as string) || "N5";
+    const contentType = req.headers.get("content-type") || "";
+    let level = "N5";
+    let lessonNumber = 1;
+    let imageParts: { inlineData: { data: string; mimeType: string } }[] = [];
 
-    // Read either lesson_number or chapterNumber from formData safely
-    const rawLesson =
-      (formData.get("lesson_number") as string) ||
-      (formData.get("chapterNumber") as string);
-    const parsedLesson = parseInt(rawLesson, 10);
-    const lessonNumber = isNaN(parsedLesson) ? 1 : parsedLesson;
+    if (contentType.includes("application/json")) {
+      const body = await req.json();
+      level = body.level || "N5";
+      const rawLesson = body.lesson_number || body.chapterNumber;
+      lessonNumber = parseInt(rawLesson, 10) || 1;
 
-    if (!files || files.length === 0) {
-      return NextResponse.json(
-        { success: false, error: "No image files provided." },
-        { status: 400 },
+      const rawImages: string[] = body.images || [];
+
+      if (!rawImages || rawImages.length === 0) {
+        return NextResponse.json(
+          { success: false, error: "No image files provided." },
+          { status: 400 },
+        );
+      }
+
+      imageParts = rawImages.map((base64Str) => ({
+        inlineData: {
+          data: base64Str.includes(",") ? base64Str.split(",")[1] : base64Str,
+          mimeType: "image/jpeg",
+        },
+      }));
+    } else {
+      const formData = await req.formData();
+      const files = formData
+        .getAll("files")
+        .concat(formData.getAll("images")) as File[];
+      level = (formData.get("level") as string) || "N5";
+
+      const rawLesson =
+        (formData.get("lesson_number") as string) ||
+        (formData.get("chapterNumber") as string);
+      const parsedLesson = parseInt(rawLesson, 10);
+      lessonNumber = isNaN(parsedLesson) ? 1 : parsedLesson;
+
+      if (!files || files.length === 0) {
+        return NextResponse.json(
+          { success: false, error: "No image files provided." },
+          { status: 400 },
+        );
+      }
+
+      imageParts = await Promise.all(
+        files.map(async (file) => {
+          const buffer = Buffer.from(await file.arrayBuffer());
+          return {
+            inlineData: {
+              data: buffer.toString("base64"),
+              mimeType: file.type || "image/jpeg",
+            },
+          };
+        }),
       );
     }
-
-    const imageParts = await Promise.all(
-      files.map(async (file) => {
-        const buffer = Buffer.from(await file.arrayBuffer());
-        return {
-          inlineData: {
-            data: buffer.toString("base64"),
-            mimeType: file.type || "image/jpeg",
-          },
-        };
-      }),
-    );
 
     const model = genAI.getGenerativeModel({
       model: "gemini-3.6-flash",
@@ -98,7 +152,13 @@ export async function POST(req: NextRequest) {
       },
     });
 
-    const prompt = `Extract all Kanji characters from the provided textbook pages. For each Kanji, extract the character itself, onyomi, kunyomi, English meanings, primary reading, stroke count if present, and an example word or sentence in Japanese with its English translation.`;
+    const prompt = `
+Extract all Kanji entries from the provided textbook pages. 
+For each Kanji character:
+1. Extract character, onyomi, kunyomi, meanings, primary reading, and stroke count.
+2. Extract all 4 vocabulary compounds (単語) provided for the Kanji.
+3. For each vocabulary word, include its reading (Kana), English meaning, a short Japanese sentence using <ruby> and <rt> tags for furigana on kanji, and its English translation.
+    `.trim();
 
     const result = await model.generateContent([prompt, ...imageParts]);
     const responseText = result.response.text();
@@ -120,8 +180,9 @@ export async function POST(req: NextRequest) {
       meanings: item.meanings,
       reading: item.reading || item.kunyomi || item.onyomi || null,
       strokes: item.strokes || null,
-      example_ja: item.example_ja || null,
-      example_en: item.example_en || null,
+      vocabulary: item.vocabulary || [],
+      example_ja: item.vocabulary?.[0]?.example_ja || null,
+      example_en: item.vocabulary?.[0]?.example_en || null,
     }));
 
     const { data: inserted, error: dbError } = await supabase

@@ -46,13 +46,6 @@ const JLPT_LEVELS: LevelConfig[] = [
   },
 ];
 
-interface TestSet {
-  id: string;
-  title: string;
-  year: number;
-  month: number;
-}
-
 interface VocabularyRow {
   id: string;
   level: string;
@@ -93,8 +86,6 @@ export default function PracticePage() {
   const [view, setView] = useState<ViewState>("MAIN");
   const [selectedLevel, setSelectedLevel] = useState<JLPTLevel | null>(null);
   const [selectedMode, setSelectedMode] = useState<PracticeMode | null>(null);
-  const [testSets, setTestSets] = useState<TestSet[]>([]);
-  const [selectedSetId, setSelectedSetId] = useState<string | null>(null);
 
   const [questions, setQuestions] = useState<Question[]>([]);
   const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0);
@@ -115,20 +106,9 @@ export default function PracticePage() {
     setView("QUIZ");
   };
 
-  useEffect(() => {
-    if (selectedLevel && selectedMode === "FULL_EXAM") {
-      fetchTestSets(selectedLevel);
-    }
-  }, [selectedLevel, selectedMode]);
-
   // 10-Second Auto-Advance Countdown Logic
   useEffect(() => {
-    if (
-      (view !== "MAIN" && view !== "QUIZ") ||
-      questions.length === 0 ||
-      quizFinished
-    )
-      return;
+    if (view !== "QUIZ" || questions.length === 0 || quizFinished) return;
 
     setTimeLeft(10); // 10 seconds per question
 
@@ -197,25 +177,6 @@ export default function PracticePage() {
     finishQuiz();
   };
 
-  const fetchTestSets = async (level: JLPTLevel) => {
-    setLoading(true);
-    setErrorMessage(null);
-
-    const { data, error } = await supabase
-      .from("jlpt_test_sets")
-      .select("id, title, year, month")
-      .eq("level", level)
-      .order("year", { ascending: false });
-
-    if (error) {
-      console.error("Error fetching test sets:", error);
-      setErrorMessage("Failed to load practice test sets from database.");
-    } else if (data) {
-      setTestSets(data);
-    }
-    setLoading(false);
-  };
-
   // --- TRANSFORMERS ---
 
   const transformVocabToQuestions = (
@@ -249,7 +210,7 @@ export default function PracticePage() {
         level: (selectedLevel || item.level || "N4") as JLPTLevel,
         section: "VOCABULARY",
         question_type: "MULTIPLE_CHOICE",
-        prompt_text: `Select the correct Japanese reading (Hiragana/Katakana) for: "${item.meanings}"`,
+        prompt_text: `Select the correct Japanese reading for: "${item.meanings}"`,
         question: item.meanings,
         reading: null,
         options,
@@ -374,6 +335,7 @@ export default function PracticePage() {
       } else if (data && data.length > 0) {
         const transformed = transformVocabToQuestions(data as VocabularyRow[]);
         setQuestions([...transformed].sort(() => Math.random() - 0.5));
+        setView("QUIZ");
       } else {
         setErrorMessage(`No vocabulary data found for ${selectedLevel}.`);
       }
@@ -389,6 +351,7 @@ export default function PracticePage() {
       } else if (data && data.length > 0) {
         const transformed = transformGrammarToQuestions(data as GrammarRow[]);
         setQuestions([...transformed].sort(() => Math.random() - 0.5));
+        setView("QUIZ");
       } else {
         setErrorMessage(`No grammar data found for ${selectedLevel}.`);
       }
@@ -404,6 +367,7 @@ export default function PracticePage() {
       } else if (data && data.length > 0) {
         const transformed = transformKanjiToQuestions(data as KanjiRow[]);
         setQuestions([...transformed].sort(() => Math.random() - 0.5));
+        setView("QUIZ");
       } else {
         setErrorMessage(`No kanji data found for ${selectedLevel}.`);
       }
@@ -416,7 +380,6 @@ export default function PracticePage() {
     setView("MAIN");
     setSelectedLevel(null);
     setSelectedMode(null);
-    setSelectedSetId(null);
     setQuestions([]);
     setCurrentQuestionIndex(0);
     setUserAnswers({});
@@ -490,6 +453,20 @@ export default function PracticePage() {
                 </h2>
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4 mb-8">
+                  {/* CLASSROOM DRILLS CARD */}
+                  <button
+                    onClick={() => setView("CLASSROOM_HUB")}
+                    className="p-5 bg-gradient-to-br from-blue-50 to-indigo-50 border border-blue-200 rounded-xl hover:border-blue-500 hover:shadow-md transition text-left"
+                  >
+                    <div className="text-xl mb-1">🏫</div>
+                    <h3 className="font-bold text-blue-900">
+                      Classroom Drills
+                    </h3>
+                    <p className="text-xs text-blue-600 mt-1">
+                      Textbook chapters, typing & stroke drills
+                    </p>
+                  </button>
+
                   <button
                     onClick={() => startQuiz("VOCABULARY")}
                     className="p-5 bg-white border border-gray-200 rounded-xl hover:border-blue-500 hover:shadow-md transition text-left"
@@ -522,22 +499,6 @@ export default function PracticePage() {
                       10s timed per question full deck drill
                     </p>
                   </button>
-
-                  {/* CLASSROOM DRILLS CARD */}
-                  {selectedLevel === "N4" && (
-                    <button
-                      onClick={() => setView("CLASSROOM_HUB")}
-                      className="p-5 bg-gradient-to-br from-blue-50 to-indigo-50 border border-blue-200 rounded-xl hover:border-blue-500 hover:shadow-md transition text-left"
-                    >
-                      <div className="text-xl mb-1">🏫</div>
-                      <h3 className="font-bold text-blue-900">
-                        Classroom Drills
-                      </h3>
-                      <p className="text-xs text-blue-600 mt-1">
-                        Textbook chapters & active typing
-                      </p>
-                    </button>
-                  )}
                 </div>
               </div>
             )}
@@ -554,60 +515,58 @@ export default function PracticePage() {
         )}
 
         {/* VIEW 3: ACTIVE MULTIPLE CHOICE QUIZ */}
-        {(selectedMode || view === "QUIZ") &&
-          questions.length > 0 &&
-          !quizFinished && (
-            <div className="max-w-2xl mx-auto">
-              <div className="flex justify-between items-center mb-4">
-                <button
-                  onClick={handleEndQuizEarly}
-                  className="px-3.5 py-1.5 bg-red-50 hover:bg-red-100 text-red-600 border border-red-200 text-xs font-semibold rounded-lg transition flex items-center gap-1.5"
-                >
-                  <span>🛑</span> End & Save Results
-                </button>
+        {view === "QUIZ" && questions.length > 0 && !quizFinished && (
+          <div className="max-w-2xl mx-auto">
+            <div className="flex justify-between items-center mb-4">
+              <button
+                onClick={handleEndQuizEarly}
+                className="px-3.5 py-1.5 bg-red-50 hover:bg-red-100 text-red-600 border border-red-200 text-xs font-semibold rounded-lg transition flex items-center gap-1.5"
+              >
+                <span>🛑</span> End & Save Results
+              </button>
 
-                <div className="flex items-center gap-2">
-                  <span className="px-3 py-1 bg-red-100 text-red-700 text-xs font-bold rounded-full animate-pulse">
-                    ⏱️ {timeLeft}s Left
-                  </span>
-                  <span className="px-3 py-1 bg-blue-100 text-blue-800 text-xs font-semibold rounded-full">
-                    {currentQuestionIndex + 1} / {questions.length}
-                  </span>
-                </div>
+              <div className="flex items-center gap-2">
+                <span className="px-3 py-1 bg-red-100 text-red-700 text-xs font-bold rounded-full animate-pulse">
+                  ⏱️ {timeLeft}s Left
+                </span>
+                <span className="px-3 py-1 bg-blue-100 text-blue-800 text-xs font-semibold rounded-full">
+                  {currentQuestionIndex + 1} / {questions.length}
+                </span>
               </div>
-
-              <div className="w-full bg-gray-200 rounded-full h-2 mb-6 overflow-hidden">
-                <div
-                  className={`h-full transition-all duration-1000 ${
-                    timeLeft <= 3 ? "bg-red-500" : "bg-blue-600"
-                  }`}
-                  style={{ width: `${(timeLeft / 10) * 100}%` }}
-                ></div>
-              </div>
-
-              <QuizEngine
-                key={currentQuestionIndex}
-                questions={[questions[currentQuestionIndex]]}
-                initialSelectedOption={userAnswers[currentQuestionIndex]}
-                onSelectOption={(optionIndex) => {
-                  setUserAnswers((prev) => ({
-                    ...prev,
-                    [currentQuestionIndex]: optionIndex,
-                  }));
-                }}
-                onComplete={(score, total, answers) => {
-                  const selectedIdx = answers[0];
-                  if (selectedIdx !== undefined) {
-                    handleAnswerSelect(selectedIdx);
-                  } else if (userAnswers[currentQuestionIndex] !== undefined) {
-                    handleAnswerSelect(userAnswers[currentQuestionIndex]);
-                  } else {
-                    handleAutoNext();
-                  }
-                }}
-              />
             </div>
-          )}
+
+            <div className="w-full bg-gray-200 rounded-full h-2 mb-6 overflow-hidden">
+              <div
+                className={`h-full transition-all duration-1000 ${
+                  timeLeft <= 3 ? "bg-red-500" : "bg-blue-600"
+                }`}
+                style={{ width: `${(timeLeft / 10) * 100}%` }}
+              ></div>
+            </div>
+
+            <QuizEngine
+              key={currentQuestionIndex}
+              questions={[questions[currentQuestionIndex]]}
+              initialSelectedOption={userAnswers[currentQuestionIndex]}
+              onSelectOption={(optionIndex) => {
+                setUserAnswers((prev) => ({
+                  ...prev,
+                  [currentQuestionIndex]: optionIndex,
+                }));
+              }}
+              onComplete={(score, total, answers) => {
+                const selectedIdx = answers[0];
+                if (selectedIdx !== undefined) {
+                  handleAnswerSelect(selectedIdx);
+                } else if (userAnswers[currentQuestionIndex] !== undefined) {
+                  handleAnswerSelect(userAnswers[currentQuestionIndex]);
+                } else {
+                  handleAutoNext();
+                }
+              }}
+            />
+          </div>
+        )}
 
         {/* LOADING & ERROR STATES */}
         {loading && (

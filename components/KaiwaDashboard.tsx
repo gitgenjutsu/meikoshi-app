@@ -9,6 +9,7 @@ import {
   Award,
   ChevronRight,
   RotateCcw,
+  X,
 } from "lucide-react";
 
 interface DialogueLine {
@@ -36,9 +37,13 @@ interface Exercise {
 
 interface KaiwaDashboardProps {
   exercises: Exercise[];
+  onClose?: () => void;
 }
 
-export default function KaiwaDashboard({ exercises }: KaiwaDashboardProps) {
+export default function KaiwaDashboard({
+  exercises,
+  onClose,
+}: KaiwaDashboardProps) {
   const [selectedExerciseIdx, setSelectedExerciseIdx] = useState<number>(0);
   const [selectedVarIdx, setSelectedVarIdx] = useState<number>(0);
 
@@ -192,7 +197,6 @@ export default function KaiwaDashboard({ exercises }: KaiwaDashboardProps) {
       }
     };
 
-    // FIX 1: Ignore recoverable mobile speech recognition errors
     recognition.onerror = (event: any) => {
       if (event.error === "no-speech" || event.error === "aborted") {
         return;
@@ -203,7 +207,6 @@ export default function KaiwaDashboard({ exercises }: KaiwaDashboardProps) {
 
     recognition.onend = () => {
       setIsListening(false);
-      // Evaluate only if speech was actually captured
       if (fullTranscript.trim()) {
         evaluateSpeech(fullTranscript);
       }
@@ -221,7 +224,7 @@ export default function KaiwaDashboard({ exercises }: KaiwaDashboardProps) {
 
   const stopListening = () => {
     if (recognitionRef.current) {
-      recognitionRef.current.stop(); // Triggers recognition.onend automatically
+      recognitionRef.current.stop();
     }
     setIsListening(false);
     if (timerRef.current) clearTimeout(timerRef.current);
@@ -236,7 +239,15 @@ export default function KaiwaDashboard({ exercises }: KaiwaDashboardProps) {
 
   if (!exercises || exercises.length === 0) {
     return (
-      <div className="p-8 text-center text-gray-500 bg-white rounded-xl border">
+      <div className="p-8 text-center text-gray-500 bg-white rounded-xl border relative">
+        {onClose && (
+          <button
+            onClick={onClose}
+            className="absolute top-4 right-4 text-xs font-semibold text-gray-500 hover:text-gray-800 flex items-center gap-1"
+          >
+            <X className="w-4 h-4" /> Exit
+          </button>
+        )}
         <p className="font-semibold">
           No Kaiwa exercises found for this lesson.
         </p>
@@ -249,7 +260,6 @@ export default function KaiwaDashboard({ exercises }: KaiwaDashboardProps) {
 
   // Render text with Furigana & HTML (e.g. <u>)
   const renderFormattedText = (rawText: string) => {
-    // Replace furigana pattern Word[reading] with ruby tags
     const rubyFormatted = rawText.replace(
       /([一-龯]+)\[(.*?)\]/g,
       "<ruby>$1<rt>$2</rt></ruby>",
@@ -259,25 +269,38 @@ export default function KaiwaDashboard({ exercises }: KaiwaDashboardProps) {
 
   return (
     <div className="max-w-4xl mx-auto p-4 space-y-6">
-      {/* Exercise Card Selection (C1, C2, C3) */}
-      <div className="flex gap-3 border-b pb-3">
-        {exercises.map((ex, idx) => (
+      {/* Header Navigation Bar */}
+      <div className="flex items-center justify-between border-b pb-3">
+        {/* Exercise Card Selection (C1, C2, C3) */}
+        <div className="flex gap-3">
+          {exercises.map((ex, idx) => (
+            <button
+              key={ex.id || idx}
+              onClick={() => {
+                setSelectedExerciseIdx(idx);
+                setSelectedVarIdx(0);
+                resetPractice();
+              }}
+              className={`px-5 py-2.5 rounded-lg font-semibold transition ${
+                selectedExerciseIdx === idx
+                  ? "bg-blue-600 text-white shadow"
+                  : "bg-gray-100 text-gray-700 hover:bg-gray-200"
+              }`}
+            >
+              Card C{ex.exercise_number || idx + 1}
+            </button>
+          ))}
+        </div>
+
+        {/* Close Button to return to Hub */}
+        {onClose && (
           <button
-            key={ex.id || idx}
-            onClick={() => {
-              setSelectedExerciseIdx(idx);
-              setSelectedVarIdx(0);
-              resetPractice();
-            }}
-            className={`px-5 py-2.5 rounded-lg font-semibold transition ${
-              selectedExerciseIdx === idx
-                ? "bg-blue-600 text-white shadow"
-                : "bg-gray-100 text-gray-700 hover:bg-gray-200"
-            }`}
+            onClick={onClose}
+            className="px-3.5 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 text-xs font-semibold rounded-lg transition flex items-center gap-1.5"
           >
-            Card C{ex.exercise_number || idx + 1}
+            <X className="w-4 h-4" /> Close Drill
           </button>
-        ))}
+        )}
       </div>
 
       {/* Selected Exercise Header */}

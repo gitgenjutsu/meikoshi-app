@@ -2,11 +2,12 @@
 
 import React, { useState, useEffect } from "react";
 import { supabase } from "@/lib/supabaseClient";
-import { compressImage } from "@/lib/imageUtils";
 import { ChapterUploader, ImagePreview } from "./jlpt/ChapterUploader";
 import { AvailableLessons } from "./jlpt/AvailableLessons";
 import { SectionSelector, SectionType } from "./jlpt/SectionSelector";
 import KaiwaDashboard from "./KaiwaDashboard";
+import KanjiTypingDrill from "@/components/jlpt/KanjiTypingDrill";
+import FormDrillEngine from "@/components/jlpt/FormDrillEngine";
 
 interface ClassroomDrillsHubProps {
   onBack: () => void;
@@ -20,6 +21,16 @@ interface Toast {
   type: "success" | "error" | "info";
 }
 
+// Utility helper to convert a File object into a Base64 string
+const fileToBase64 = (file: File): Promise<string> => {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.readAsDataURL(file);
+    reader.onload = () => resolve(reader.result as string);
+    reader.onerror = (error) => reject(error);
+  });
+};
+
 export default function ClassroomDrillsHub({
   onBack,
   onStartQuiz,
@@ -31,8 +42,15 @@ export default function ClassroomDrillsHub({
   const [availableChapters, setAvailableChapters] = useState<number[]>([]);
   const [loading, setLoading] = useState(false);
 
-  // Active Kaiwa Drill Session State (stores fetched exercises array)
+  // Active Drill Session States
   const [kaiwaExercises, setKaiwaExercises] = useState<any[] | null>(null);
+  const [activeKanjiData, setActiveKanjiData] = useState<{
+    currentLessonKanji: any[];
+    previousLessonsKanji: any[];
+  } | null>(null);
+  const [activeFormQuestions, setActiveFormQuestions] = useState<any[] | null>(
+    null,
+  );
 
   // Upload Form States
   const [chapterInput, setChapterInput] = useState<string>("");
@@ -167,7 +185,6 @@ export default function ClassroomDrillsHub({
     setLoading(true);
     const { tableName, colName } = getSectionMetadata(selectedSection);
 
-    // DIRECT ROUTE: Opening Kaiwa lesson fetches exercise data and renders KaiwaDashboard
     if (selectedSection === "KAIWA") {
       const { data, error } = await supabase
         .from(tableName)
@@ -186,6 +203,33 @@ export default function ClassroomDrillsHub({
       return;
     }
 
+    if (selectedSection === "KANJI") {
+      const { data: currentKanji, error: currentErr } = await supabase
+        .from(tableName)
+        .select("*")
+        .eq(colName, chapterNum)
+        .eq("level", selectedLevel);
+
+      if (currentErr || !currentKanji || currentKanji.length === 0) {
+        showToast("Error loading Kanji lesson data.", "error");
+        setLoading(false);
+        return;
+      }
+
+      const { data: previousKanji } = await supabase
+        .from(tableName)
+        .select("*")
+        .lt(colName, chapterNum)
+        .eq("level", selectedLevel);
+
+      setActiveKanjiData({
+        currentLessonKanji: currentKanji,
+        previousLessonsKanji: previousKanji || [],
+      });
+      setLoading(false);
+      return;
+    }
+
     const { data, error } = await supabase
       .from(tableName)
       .select("*")
@@ -198,9 +242,8 @@ export default function ClassroomDrillsHub({
       return;
     }
 
-    let quizData = data;
     if (selectedSection === "VOCAB") {
-      quizData = data.map((item, idx) => {
+      const quizData = data.map((item, idx) => {
         const correctJapanese = item.word || item.reading;
 
         const otherJapaneseWords = data
@@ -228,275 +271,160 @@ export default function ClassroomDrillsHub({
           level: item.level || selectedLevel,
           section: "VOCABULARY",
           question_type: "MULTIPLE_CHOICE",
-          prompt_text: `Select the correct Japanese reading (Hiragana/Katakana) for: "${item.meanings}"`,
+          prompt_text: `Select the correct Japanese reading for: "${item.meanings}"`,
           question: item.meanings,
           reading: correctJapanese,
           options: options,
           correct_option_index: correctIndex,
         };
       });
+
+      onStartQuiz(quizData);
     }
 
-    if (selectedSection === "KANJI") {
-      const questions: any[] = [];
-
-      data.forEach((item, idx) => {
-        const correctReading =
-          item.reading || item.kunyomi || item.onyomi || item.character;
-        const correctFullWord = item.example_ja || item.character;
-
-        const otherReadings = data
-          .filter((_, i) => i !== idx)
-          .map((v) => v.reading || v.kunyomi || v.onyomi)
-          .filter((val): val is string => Boolean(val));
-
-        const otherFullWords = data
-          .filter((_, i) => i !== idx)
-          .map((v) => v.example_ja || v.character)
-          .filter((val): val is string => Boolean(val));
-
-        const distractorReadings = [...otherReadings]
-          .sort(() => Math.random() - 0.5)
-          .slice(0, 3);
-        const fallbacksReading = ["みず", "ひと", "やま", "かわ"];
-        let fIdxR = 0;
-        while (distractorReadings.length < 3) {
-          distractorReadings.push(
-            fallbacksReading[fIdxR % fallbacksReading.length],
-          );
-          fIdxR++;
-        }
-        const correctIdxA = Math.floor(Math.random() * 4);
-        const optionsA = [...distractorReadings];
-        optionsA.splice(correctIdxA, 0, correctReading);
-
-        questions.push({
-          id: `${item.id || idx}-part1`,
-          level: item.level || selectedLevel,
-          section: "KANJI",
-          question_type: "MULTIPLE_CHOICE",
-          prompt_text: `[Part 1: Meaning → Reading] Select the correct reading in Hiragana/Katakana for: "${item.meanings}"`,
-          question: item.meanings,
-          reading: correctReading,
-          options: optionsA,
-          correct_option_index: correctIdxA,
-        });
-
-        const distractorWords = [...otherFullWords]
-          .sort(() => Math.random() - 0.5)
-          .slice(0, 3);
-        const fallbacksWord = ["水", "山", "人", "川"];
-        let fIdxW = 0;
-        while (distractorWords.length < 3) {
-          distractorWords.push(fallbacksWord[fIdxW % fallbacksWord.length]);
-          fIdxW++;
-        }
-        const correctIdxB = Math.floor(Math.random() * 4);
-        const optionsB = [...distractorWords];
-        optionsB.splice(correctIdxB, 0, correctFullWord);
-
-        questions.push({
-          id: `${item.id || idx}-part2`,
-          level: item.level || selectedLevel,
-          section: "KANJI",
-          question_type: "MULTIPLE_CHOICE",
-          prompt_text: `[Part 2: Reading → Kanji Word] Select the complete Kanji word for: "${correctReading}"`,
-          question: correctReading,
-          reading: correctFullWord,
-          options: optionsB,
-          correct_option_index: correctIdxB,
-        });
-      });
-
-      quizData = questions.sort((a, b) => {
-        if (
-          a.prompt_text.startsWith("[Part 1") &&
-          b.prompt_text.startsWith("[Part 2")
-        )
-          return -1;
-        if (
-          a.prompt_text.startsWith("[Part 2") &&
-          b.prompt_text.startsWith("[Part 1")
-        )
-          return 1;
-        return 0;
-      });
-    }
-
-    const shuffled = [...quizData].sort(() => Math.random() - 0.5);
-    const selected20 = shuffled.slice(0, 20);
-
-    onStartQuiz(selected20);
     setLoading(false);
   };
 
-  const handleSaveAndGenerateDrill = async () => {
-    const chNum = parseInt(chapterInput.trim(), 10);
+  const handleProcessAndSave = async () => {
+    if (!selectedSection) return;
 
-    if (selectedImages.length === 0 || isNaN(chNum) || chNum <= 0) {
-      showToast(
-        "Please enter a valid chapter number and select images.",
-        "error",
-      );
+    const chapterNum = parseInt(chapterInput, 10);
+    if (isNaN(chapterNum) || chapterNum <= 0) {
+      showToast("Please enter a valid chapter number.", "error");
       return;
     }
 
-    if (!selectedSection) {
-      showToast("Please select a section first.", "error");
-      return;
-    }
-
-    const { tableName, apiRoute } = getSectionMetadata(selectedSection);
-
-    try {
-      const { count, error: checkError } = await supabase
-        .from(tableName)
-        .select("id", { count: "exact", head: true })
-        .eq("lesson_number", chNum)
-        .eq("level", selectedLevel);
-
-      if (checkError) throw checkError;
-
-      if (count && count > 0) {
-        selectedImages.forEach((img) => URL.revokeObjectURL(img.url));
-        setSelectedImages([]);
-        setChapterInput("");
-        showToast(
-          `${selectedLevel} Lesson ${chNum} already exists in ${tableName}!`,
-          "error",
-        );
-        return;
-      }
-    } catch (err: any) {
-      console.error("Duplicate Check Error:", err);
-      showToast(`Failed to verify existing lesson: ${err.message}`, "error");
+    if (selectedImages.length === 0) {
+      showToast("Please select at least one image to extract.", "error");
       return;
     }
 
     setIsGenerating(true);
 
     try {
-      const formData = new FormData();
-      formData.append("lesson_number", String(chNum));
-      formData.append("chapterNumber", String(chNum));
-      formData.append("level", selectedLevel);
-
-      for (const img of selectedImages) {
-        const compressedFile = await compressImage(img.file);
-        formData.append("files", compressedFile);
-      }
-
-      const res = await fetch(apiRoute, {
-        method: "POST",
-        body: formData,
-      });
-
-      const result = await res.json();
-
-      if (!res.ok || !result.success) {
-        throw new Error("Failed to process image with AI");
-      }
-
-      const insertedCount =
-        result.count || (result.data ? result.data.length : 0);
-
-      showToast(
-        `Saved ${insertedCount} items for ${selectedLevel} Lesson ${chNum}!`,
-        "success",
+      // 1. Convert files to base64 strings
+      const base64Images = await Promise.all(
+        selectedImages.map((img) => fileToBase64(img.file)),
       );
 
-      selectedImages.forEach((img) => URL.revokeObjectURL(img.url));
-      setSelectedImages([]);
-      setChapterInput("");
+      const { apiRoute } = getSectionMetadata(selectedSection);
 
-      await fetchUploadedChapters(selectedSection);
+      // 2. Execute fetch with JSON payload
+      const res = await fetch(apiRoute, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          images: base64Images,
+          level: selectedLevel,
+          lesson_number: chapterNum,
+        }),
+      });
+
+      // 3. Read raw text response first to avoid "Unexpected end of JSON input"
+      const responseText = await res.text();
+
+      let responseData: any = {};
+      if (responseText) {
+        try {
+          responseData = JSON.parse(responseText);
+        } catch (parseError) {
+          console.error("Failed to parse response JSON:", responseText);
+        }
+      }
+
+      if (!res.ok) {
+        throw new Error(
+          responseData.error ||
+            `Server error (${res.status}): ${res.statusText || "Empty response"}`,
+        );
+      }
+
+      showToast(
+        `Lesson ${chapterNum} extracted & saved successfully!`,
+        "success",
+      );
+      setChapterInput("");
+      setSelectedImages([]);
+      fetchUploadedChapters(selectedSection);
     } catch (err: any) {
-      console.error("Processing Error:", err);
-      showToast(`Error: ${err.message}`, "error");
+      console.error(err);
+      showToast(err.message || "An unexpected error occurred.", "error");
     } finally {
       setIsGenerating(false);
     }
   };
 
-  // IF ACTIVE KAIWA LESSON IS SELECTED: RENDER KAIWA DASHBOARD DIRECTLY
-  if (selectedSection === "KAIWA" && kaiwaExercises !== null) {
+  if (kaiwaExercises) {
     return (
-      <div className="max-w-4xl mx-auto space-y-4">
-        <button
-          onClick={() => setKaiwaExercises(null)}
-          className="text-sm font-semibold text-gray-600 hover:text-gray-900 flex items-center gap-1 transition"
-        >
-          &larr; Back to Kaiwa Lessons
-        </button>
-        <KaiwaDashboard exercises={kaiwaExercises} />
-      </div>
+      <KaiwaDashboard
+        exercises={kaiwaExercises}
+        onClose={() => setKaiwaExercises(null)}
+      />
+    );
+  }
+
+  if (activeKanjiData) {
+    return (
+      <KanjiTypingDrill
+        currentLessonKanji={activeKanjiData.currentLessonKanji}
+        previousLessonsKanji={activeKanjiData.previousLessonsKanji}
+        onClose={() => setActiveKanjiData(null)}
+      />
+    );
+  }
+
+  if (activeFormQuestions) {
+    return (
+      <FormDrillEngine
+        questions={activeFormQuestions}
+        onClose={() => setActiveFormQuestions(null)}
+      />
     );
   }
 
   return (
-    <div className="max-w-3xl mx-auto relative pb-12">
-      {/* FLOATING TOAST NOTIFICATION */}
+    <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6 sm:p-8 relative">
       {toast && (
-        <div className="fixed top-5 right-5 z-50 transition-all duration-300 animate-slide-in">
-          <div
-            className={`flex items-center gap-3 px-4 py-3 rounded-xl shadow-lg border text-sm font-medium ${
-              toast.type === "success"
-                ? "bg-green-50 text-green-800 border-green-200"
-                : toast.type === "error"
-                  ? "bg-red-50 text-red-800 border-red-200"
-                  : "bg-blue-50 text-blue-800 border-blue-200"
-            }`}
-          >
-            <span>
-              {toast.type === "success"
-                ? "✅"
-                : toast.type === "error"
-                  ? "⚠️"
-                  : "ℹ️"}
-            </span>
-            <span>{toast.message}</span>
-            <button
-              onClick={() => setToast(null)}
-              className="ml-2 text-xs opacity-60 hover:opacity-100"
-            >
-              ✕
-            </button>
-          </div>
+        <div
+          className={`fixed top-4 right-4 z-50 px-4 py-3 rounded-lg shadow-lg border text-sm font-medium transition-all duration-300 ${
+            toast.type === "success"
+              ? "bg-green-50 border-green-200 text-green-800"
+              : toast.type === "error"
+                ? "bg-red-50 border-red-200 text-red-800"
+                : "bg-blue-50 border-blue-200 text-blue-800"
+          }`}
+        >
+          {toast.message}
         </div>
       )}
 
-      {/* Header Navigation */}
-      <div className="flex justify-between items-center mb-6">
+      <div className="flex items-center justify-between mb-6">
         <button
-          onClick={selectedSection ? () => setSelectedSection(null) : onBack}
-          className="text-sm font-medium text-gray-500 hover:text-gray-800 underline"
+          onClick={onBack}
+          className="text-sm font-medium text-gray-500 hover:text-gray-800 underline flex items-center gap-1"
         >
-          &larr;{" "}
-          {selectedSection ? "Back to Section Selection" : "Back to Main Menu"}
+          &larr; Back to Practice Selection
         </button>
-        <span className="px-4 py-1.5 bg-blue-100 text-blue-800 text-sm font-bold rounded-full">
+        <span className="px-3.5 py-1 bg-indigo-50 border border-indigo-100 text-indigo-700 text-xs font-bold rounded-full">
           Classroom Drills ({selectedLevel})
         </span>
       </div>
 
-      {/* STEP 1: SELECT SECTION CARD */}
-      {!selectedSection && (
-        <SectionSelector onSelectSection={(sec) => setSelectedSection(sec)} />
-      )}
-
-      {/* STEP 2: UPLOAD & GENERATE DRILL OR SELECT EXISTING LESSON */}
-      {selectedSection && (
+      {!selectedSection ? (
+        <SectionSelector onSelectSection={setSelectedSection} />
+      ) : (
         <div className="space-y-8">
-          <ChapterUploader
-            selectedLevel={selectedLevel}
-            chapterInput={chapterInput}
-            setChapterInput={setChapterInput}
-            selectedImages={selectedImages}
-            onFileChange={handleFileChange}
-            onRemoveImage={handleRemoveImage}
-            onSaveAndGenerate={handleSaveAndGenerateDrill}
-            isGenerating={isGenerating}
-          />
+          <div className="flex items-center justify-between border-b pb-4">
+            <button
+              onClick={() => setSelectedSection(null)}
+              className="text-xs font-semibold text-indigo-600 hover:text-indigo-800 flex items-center gap-1"
+            >
+              &larr; Switch Section
+            </button>
+            <h2 className="text-lg font-bold text-gray-800 uppercase tracking-wide">
+              {selectedSection} DRILLS
+            </h2>
+          </div>
 
           <AvailableLessons
             selectedSection={selectedSection}
@@ -505,6 +433,19 @@ export default function ClassroomDrillsHub({
             loading={loading}
             onSelectChapter={handleSelectExistingChapter}
             onDeleteChapter={handleDeleteChapter}
+          />
+
+          <hr className="border-gray-100" />
+
+          <ChapterUploader
+            selectedLevel={selectedLevel}
+            chapterInput={chapterInput}
+            setChapterInput={setChapterInput}
+            selectedImages={selectedImages}
+            onFileChange={handleFileChange}
+            onRemoveImage={handleRemoveImage}
+            onSaveAndGenerate={handleProcessAndSave}
+            isGenerating={isGenerating}
           />
         </div>
       )}

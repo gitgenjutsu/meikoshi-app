@@ -40,7 +40,10 @@ export const AvailableLessons: React.FC<AvailableLessonsProps> = ({
               className="relative p-4 bg-blue-50/50 border border-blue-200 rounded-xl hover:bg-blue-600 hover:text-white transition text-center cursor-pointer group"
             >
               <button
-                onClick={(e) => onDeleteChapter(ch, e)}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onDeleteChapter(ch, e);
+                }}
                 className="absolute top-1.5 right-1.5 w-5 h-5 bg-red-100 hover:bg-red-600 text-red-600 hover:text-white rounded-full text-xs flex items-center justify-center opacity-0 group-hover:opacity-100 transition"
                 title="Delete lesson"
               >
