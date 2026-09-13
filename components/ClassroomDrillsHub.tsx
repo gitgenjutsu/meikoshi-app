@@ -403,10 +403,10 @@ export default function ClassroomDrillsHub({
           onClick={onBack}
           className="text-sm font-medium text-gray-500 hover:text-gray-800 underline flex items-center gap-1"
         >
-          &larr; Back to Practice Selection
+          &larr; Back
         </button>
         <span className="px-3.5 py-1 bg-indigo-50 border border-indigo-100 text-indigo-700 text-xs font-bold rounded-full">
-          Classroom Drills ({selectedLevel})
+          ({selectedLevel})
         </span>
       </div>
 

@@ -468,8 +468,9 @@ export default function PracticePage() {
                   </button>
 
                   <button
+                    disabled
                     onClick={() => startQuiz("VOCABULARY")}
-                    className="p-5 bg-white border border-gray-200 rounded-xl hover:border-blue-500 hover:shadow-md transition text-left"
+                    className="p-5 bg-white border border-gray-200 rounded-xl hover:border-blue-500 hover:shadow-md transition text-left disabled:opacity-50 disabled:cursor-not-allowed"
                   >
                     <div className="text-xl mb-1">📝</div>
                     <h3 className="font-bold text-gray-900">Vocabulary</h3>
@@ -479,8 +480,9 @@ export default function PracticePage() {
                   </button>
 
                   <button
+                    disabled
                     onClick={() => startQuiz("KANJI")}
-                    className="p-5 bg-white border border-gray-200 rounded-xl hover:border-blue-500 hover:shadow-md transition text-left"
+                    className="p-5 bg-white border border-gray-200 rounded-xl hover:border-blue-500 hover:shadow-md transition text-left disabled:opacity-50 disabled:cursor-not-allowed"
                   >
                     <div className="text-xl mb-1">漢</div>
                     <h3 className="font-bold text-gray-900">Kanji</h3>
@@ -490,8 +492,9 @@ export default function PracticePage() {
                   </button>
 
                   <button
+                    disabled
                     onClick={() => startQuiz("GRAMMAR")}
-                    className="p-5 bg-white border border-gray-200 rounded-xl hover:border-blue-500 hover:shadow-md transition text-left"
+                    className="p-5 bg-white border border-gray-200 rounded-xl hover:border-blue-500 hover:shadow-md transition text-left disabled:opacity-50 disabled:cursor-not-allowed"
                   >
                     <div className="text-xl mb-1">⛩️</div>
                     <h3 className="font-bold text-gray-900">Grammar</h3>
