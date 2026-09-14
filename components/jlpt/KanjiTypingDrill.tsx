@@ -57,8 +57,8 @@ export default function KanjiTypingDrill({
     y: [],
   });
 
-  // 10-second Countdown State
-  const [timeLeft, setTimeLeft] = useState(10);
+  // 15-second Countdown State
+  const [timeLeft, setTimeLeft] = useState(15);
 
   const [history, setHistory] = useState<
     Array<{
@@ -355,7 +355,7 @@ export default function KanjiTypingDrill({
   useEffect(() => {
     if (isFinished || questions.length === 0) return;
 
-    setTimeLeft(10);
+    setTimeLeft(15);
 
     const timer = setInterval(() => {
       setTimeLeft((prev) => {
@@ -536,9 +536,9 @@ export default function KanjiTypingDrill({
         <div className="text-4xl font-black text-gray-900 tracking-wide">
           {currentQ.promptWord}
         </div>
-        <div className="text-xs text-gray-500 font-medium italic">
+        {/* <div className="text-xs text-gray-500 font-medium italic">
           ({currentQ.hintMeaning})
-        </div>
+        </div> */}
       </div>
 
       {/* Input Area */}

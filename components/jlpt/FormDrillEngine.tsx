@@ -35,7 +35,7 @@ export default function FormDrillEngine({
 }: FormDrillEngineProps) {
   const [currentIndex, setCurrentIndex] = useState(0);
   const [selectedOption, setSelectedOption] = useState<number | null>(null);
-  const [timeLeft, setTimeLeft] = useState(10);
+  const [timeLeft, setTimeLeft] = useState(15);
   const [history, setHistory] = useState<
     Array<{
       question: FormQuizQuestion;
@@ -51,7 +51,7 @@ export default function FormDrillEngine({
   useEffect(() => {
     if (isFinished || !currentQ) return;
 
-    setTimeLeft(10);
+    setTimeLeft(15);
     const timer = setInterval(() => {
       setTimeLeft((prev) => {
         if (prev <= 1) {

@@ -45,7 +45,7 @@ export default function VocabTypingDrill({
   const isSubmittingRef = useRef(false);
   const timerRef = useRef<NodeJS.Timeout | null>(null);
 
-  const [timeLeft, setTimeLeft] = useState(10);
+  const [timeLeft, setTimeLeft] = useState(15);
   const [history, setHistory] = useState<
     Array<{
       question: VocabQuestion;
@@ -153,7 +153,7 @@ export default function VocabTypingDrill({
   useEffect(() => {
     if (isFinished || questions.length === 0) return;
 
-    setTimeLeft(10);
+    setTimeLeft(15);
     isSubmittingRef.current = false;
 
     if (timerRef.current) {

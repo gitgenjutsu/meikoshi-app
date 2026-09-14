@@ -89,7 +89,7 @@ export default function PracticePage() {
 
   const [questions, setQuestions] = useState<Question[]>([]);
   const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0);
-  const [timeLeft, setTimeLeft] = useState(10);
+  const [timeLeft, setTimeLeft] = useState(15);
 
   const [loading, setLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -110,7 +110,7 @@ export default function PracticePage() {
   useEffect(() => {
     if (view !== "QUIZ" || questions.length === 0 || quizFinished) return;
 
-    setTimeLeft(10); // 10 seconds per question
+    setTimeLeft(15); // 15 seconds per question
 
     const timer = setInterval(() => {
       setTimeLeft((prev) => {
