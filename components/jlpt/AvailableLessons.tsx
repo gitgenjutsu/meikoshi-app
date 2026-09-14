@@ -61,7 +61,7 @@ export const AvailableLessons: React.FC<AvailableLessonsProps> = ({
       ) : (
         <p className="text-sm text-gray-500 bg-gray-50 p-4 rounded-xl border border-dashed border-gray-300 text-center">
           No uploaded lessons found for {selectedSection} ({selectedLevel}).
-          Upload your first chapter above!
+          Upload your first chapter!
         </p>
       )}
     </div>
