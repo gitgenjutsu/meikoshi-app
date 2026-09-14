@@ -21,16 +21,6 @@ interface Toast {
   type: "success" | "error" | "info";
 }
 
-// Utility helper to convert a File object into a Base64 string
-const fileToBase64 = (file: File): Promise<string> => {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.readAsDataURL(file);
-    reader.onload = () => resolve(reader.result as string);
-    reader.onerror = (error) => reject(error);
-  });
-};
-
 export default function ClassroomDrillsHub({
   onBack,
   onStartQuiz,
@@ -302,27 +292,26 @@ export default function ClassroomDrillsHub({
     setIsGenerating(true);
 
     try {
-      // 1. Convert files to base64 strings
-      const base64Images = await Promise.all(
-        selectedImages.map((img) => fileToBase64(img.file)),
-      );
-
       const { apiRoute } = getSectionMetadata(selectedSection);
 
-      // 2. Execute fetch with JSON payload
-      const res = await fetch(apiRoute, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          images: base64Images,
-          level: selectedLevel,
-          lesson_number: chapterNum,
-        }),
+      // Construct standard multipart/form-data payload
+      const formData = new FormData();
+      formData.append("level", selectedLevel);
+      formData.append("lesson_number", String(chapterNum));
+
+      // Append files matching the key name expected by backend: "files"
+      selectedImages.forEach((img) => {
+        formData.append("files", img.file);
       });
 
-      // 3. Read raw text response first to avoid "Unexpected end of JSON input"
-      const responseText = await res.text();
+      // Submit request without specifying Content-Type
+      const res = await fetch(apiRoute, {
+        method: "POST",
+        body: formData,
+      });
 
+      // Parse JSON response safely
+      const responseText = await res.text();
       let responseData: any = {};
       if (responseText) {
         try {
