@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { GoogleGenerativeAI, SchemaType } from "@google/generative-ai";
+import { supabase } from "@/lib/supabaseClient";
 
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || "");
 
@@ -7,7 +8,8 @@ export async function POST(req: Request) {
   try {
     const formData = await req.formData();
     const files = formData.getAll("files") as File[];
-    const chapterNumber = formData.get("chapterNumber") as string;
+    const chapterNumber = (formData.get("lesson_number") ||
+      formData.get("chapterNumber")) as string;
     const level = (formData.get("level") as string) || "N4";
 
     if (!files || files.length === 0) {
@@ -17,7 +19,6 @@ export async function POST(req: Request) {
       );
     }
 
-    // Convert all uploaded image files into Gemini image parts
     const imageParts = await Promise.all(
       files.map(async (file) => {
         const bytes = await file.arrayBuffer();
@@ -52,8 +53,22 @@ export async function POST(req: Request) {
                 type: SchemaType.STRING,
                 description: "English translation/meaning",
               },
+              example_ja: {
+                type: SchemaType.STRING,
+                description: "Japanese example sentence in Kana/Kanji",
+              },
+              example_en: {
+                type: SchemaType.STRING,
+                description: "English translation of example sentence",
+              },
             },
-            required: ["word", "reading", "meanings"],
+            required: [
+              "word",
+              "reading",
+              "meanings",
+              "example_ja",
+              "example_en",
+            ],
           },
         },
       },
@@ -64,31 +79,43 @@ export async function POST(req: Request) {
       Combine all words from all pages into a single flat array without duplicates.
       
       CRITICAL INSTRUCTION FOR VOCABULARY DRILLS:
-      - Do NOT output Kanji in the 'word' field. 
-      - Convert all Japanese words into pure Hiragana or Katakana. 
+      - Do NOT output Kanji in the 'word' or 'reading' fields. 
+      - Convert all Japanese target vocabulary into pure Hiragana or Katakana.
       - Both 'word' and 'reading' must contain ONLY Hiragana or Katakana strings (e.g., "たべます", "バス", "おくります").
       - 'meanings': Concise English translation (e.g., "to eat", "bus", "to send").
+      - 'example_ja': Generate a simple, realistic level-appropriate Japanese example sentence incorporating this word.
+      - 'example_en': English translation of example_ja.
     `;
 
     const result = await model.generateContent([prompt, ...imageParts]);
     const extractedVocab = JSON.parse(result.response.text());
 
-    // Map extracted items and ensure fallback strips Kanji if any slips through
     const formattedRows = extractedVocab.map((item: any) => ({
       level,
       lesson_number: Number(chapterNumber),
-      // Prefer reading over word to strictly enforce Kana
       word: item.reading || item.word,
       reading: item.reading || item.word,
       meanings: item.meanings,
+      example_ja: item.example_ja || "",
+      example_en: item.example_en || "",
     }));
 
-    return NextResponse.json({ success: true, data: formattedRows });
+    const { data, error } = await supabase
+      .from("jlpt_vocabulary")
+      .insert(formattedRows)
+      .select();
+
+    if (error) {
+      console.error("Supabase Insert Error:", error);
+      return NextResponse.json({ error: error.message }, { status: 500 });
+    }
+
+    return NextResponse.json({ success: true, data });
   } catch (error: any) {
     console.error("Multi-Page OCR Error:", error);
     return NextResponse.json(
-      { error: "Google AI server is busy. Please try again in a few moments." },
-      { status: 503 },
+      { error: error.message || "Failed to process request." },
+      { status: 500 },
     );
   }
 }

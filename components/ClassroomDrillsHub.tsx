@@ -8,6 +8,7 @@ import { SectionSelector, SectionType } from "./jlpt/SectionSelector";
 import KaiwaDashboard from "./KaiwaDashboard";
 import KanjiTypingDrill from "@/components/jlpt/KanjiTypingDrill";
 import FormDrillEngine from "@/components/jlpt/FormDrillEngine";
+import VocabTypingDrill from "@/components/jlpt/VocabTypingDrill";
 
 interface ClassroomDrillsHubProps {
   onBack: () => void;
@@ -38,6 +39,7 @@ export default function ClassroomDrillsHub({
     currentLessonKanji: any[];
     previousLessonsKanji: any[];
   } | null>(null);
+  const [activeVocabData, setActiveVocabData] = useState<any[] | null>(null);
   const [activeFormQuestions, setActiveFormQuestions] = useState<any[] | null>(
     null,
   );
@@ -233,43 +235,8 @@ export default function ClassroomDrillsHub({
     }
 
     if (selectedSection === "VOCAB") {
-      const quizData = data.map((item, idx) => {
-        const correctJapanese = item.word || item.reading;
-
-        const otherJapaneseWords = data
-          .filter((_, i) => i !== idx)
-          .map((v) => v.word || v.reading)
-          .filter((val): val is string => Boolean(val));
-
-        const shuffledDistractors = [...otherJapaneseWords]
-          .sort(() => Math.random() - 0.5)
-          .slice(0, 3);
-
-        const fallbacks = ["ともだち", "せんせい", "がくせい", "ほん"];
-        let fallbackIdx = 0;
-        while (shuffledDistractors.length < 3) {
-          shuffledDistractors.push(fallbacks[fallbackIdx % fallbacks.length]);
-          fallbackIdx++;
-        }
-
-        const correctIndex = Math.floor(Math.random() * 4);
-        const options = [...shuffledDistractors];
-        options.splice(correctIndex, 0, correctJapanese);
-
-        return {
-          id: item.id || String(idx),
-          level: item.level || selectedLevel,
-          section: "VOCABULARY",
-          question_type: "MULTIPLE_CHOICE",
-          prompt_text: `Select the correct Japanese reading for: "${item.meanings}"`,
-          question: item.meanings,
-          reading: correctJapanese,
-          options: options,
-          correct_option_index: correctIndex,
-        };
-      });
-
-      onStartQuiz(quizData);
+      // Launch classroom drill typing component
+      setActiveVocabData(data);
     }
 
     setLoading(false);
@@ -294,23 +261,19 @@ export default function ClassroomDrillsHub({
     try {
       const { apiRoute } = getSectionMetadata(selectedSection);
 
-      // Construct standard multipart/form-data payload
       const formData = new FormData();
       formData.append("level", selectedLevel);
       formData.append("lesson_number", String(chapterNum));
 
-      // Append files matching the key name expected by backend: "files"
       selectedImages.forEach((img) => {
         formData.append("files", img.file);
       });
 
-      // Submit request without specifying Content-Type
       const res = await fetch(apiRoute, {
         method: "POST",
         body: formData,
       });
 
-      // Parse JSON response safely
       const responseText = await res.text();
       let responseData: any = {};
       if (responseText) {
@@ -358,6 +321,15 @@ export default function ClassroomDrillsHub({
         currentLessonKanji={activeKanjiData.currentLessonKanji}
         previousLessonsKanji={activeKanjiData.previousLessonsKanji}
         onClose={() => setActiveKanjiData(null)}
+      />
+    );
+  }
+
+  if (activeVocabData) {
+    return (
+      <VocabTypingDrill
+        currentLessonVocab={activeVocabData}
+        onClose={() => setActiveVocabData(null)}
       />
     );
   }

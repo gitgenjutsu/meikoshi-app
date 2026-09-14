@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef, useCallback } from "react";
 
 export interface VocabDbItem {
   id?: string;
@@ -10,12 +10,15 @@ export interface VocabDbItem {
   meaning?: string;
   example_ja?: string;
   example_en?: string;
+  example_sentence?: string;
+  example_translation?: string;
+  exampleJa?: string;
+  exampleEn?: string;
 }
 
 export interface VocabQuestion {
   id: string;
   promptMeaning: string;
-  promptWord?: string;
   targetAnswer: string;
   exampleJa: string;
   exampleEn: string;
@@ -33,14 +36,16 @@ export default function VocabTypingDrill({
   const [questions, setQuestions] = useState<VocabQuestion[]>([]);
   const [currentIndex, setCurrentIndex] = useState(0);
   const [userInputText, setUserInputText] = useState("");
-  const [isEvaluating, setIsEvaluating] = useState(false);
+  const [isEvaluating] = useState(false);
 
-  // Lock ref to prevent double submission when submit button click collides with timer expiry
+  // Synchronous refs for state tracking without re-triggering timer effects
+  const userInputRef = useRef("");
+  userInputRef.current = userInputText;
+
   const isSubmittingRef = useRef(false);
+  const timerRef = useRef<NodeJS.Timeout | null>(null);
 
-  // 10-second timer state
   const [timeLeft, setTimeLeft] = useState(10);
-
   const [history, setHistory] = useState<
     Array<{
       question: VocabQuestion;
@@ -52,34 +57,34 @@ export default function VocabTypingDrill({
 
   const textInputRef = useRef<HTMLInputElement | null>(null);
 
-  // Build max 20 random question pool for the current lesson
+  // 1. Build max 20 random questions (Hides Japanese answer from question prompt)
   useEffect(() => {
     if (!currentLessonVocab || currentLessonVocab.length === 0) return;
 
     const shuffle = <T,>(arr: T[]): T[] =>
       [...arr].sort(() => Math.random() - 0.5);
 
-    // Deduplicate items by word or reading
     const uniqueVocab = Array.from(
       new Map(
         currentLessonVocab.map((item) => [
-          item.word || item.reading || String(Math.random()),
+          item.reading || item.word || String(Math.random()),
           item,
         ]),
       ).values(),
     );
 
-    // Pick max 20 random items
     const selectedVocab = shuffle(uniqueVocab).slice(0, 20);
 
     const generatedQuestions: VocabQuestion[] = selectedVocab.map(
       (item, idx) => ({
         id: `vocab-${idx}-${item.id || crypto.randomUUID()}`,
-        promptMeaning: item.meanings || item.meaning || "Translate to Japanese",
-        promptWord: item.word || "",
+        promptMeaning: item.meanings || item.meaning || "Translate to Kana",
         targetAnswer: item.reading || item.word || "",
-        exampleJa: item.example_ja || "",
-        exampleEn: item.example_en || "",
+        // Fallbacks across all common Supabase database column names
+        exampleJa:
+          item.example_ja || item.example_sentence || item.exampleJa || "",
+        exampleEn:
+          item.example_en || item.example_translation || item.exampleEn || "",
       }),
     );
 
@@ -96,75 +101,88 @@ export default function VocabTypingDrill({
     }
   }, [currentIndex, isFinished, questions]);
 
-  const handleSubmitAnswer = async (e?: React.FormEvent) => {
-    if (e) e.preventDefault();
+  // Stable submission callback without nested state setters
+  const handleSubmitAnswer = useCallback(
+    (e?: React.FormEvent) => {
+      if (e) e.preventDefault();
 
-    // Prevent double execution on same question
-    if (isSubmittingRef.current) return;
-    isSubmittingRef.current = true;
+      // Lock submit actions if already processing or drill complete
+      if (isSubmittingRef.current || isFinished) return;
+      isSubmittingRef.current = true;
 
-    const currentQ = questions[currentIndex];
-    if (!currentQ) {
-      isSubmittingRef.current = false;
-      return;
-    }
+      if (timerRef.current) {
+        clearInterval(timerRef.current);
+        timerRef.current = null;
+      }
 
-    setIsEvaluating(true);
+      const currentQ = questions[currentIndex];
+      if (!currentQ) {
+        isSubmittingRef.current = false;
+        return;
+      }
 
-    const textAns = userInputText.trim();
-    const cleanTarget = currentQ.targetAnswer.trim().toLowerCase();
-    const isCorrect = textAns.toLowerCase() === cleanTarget;
+      const textAns = userInputRef.current.trim();
+      const cleanTarget = currentQ.targetAnswer.trim().toLowerCase();
+      const isCorrect = textAns.toLowerCase() === cleanTarget;
 
-    setHistory((prev) => [
-      ...prev,
-      {
-        question: currentQ,
-        userAnswerText: textAns,
-        isCorrect,
-      },
-    ]);
+      // Append score result for current item
+      setHistory((prev) => [
+        ...prev,
+        {
+          question: currentQ,
+          userAnswerText: textAns,
+          isCorrect,
+        },
+      ]);
 
-    setUserInputText("");
-    setIsEvaluating(false);
+      setUserInputText("");
+      userInputRef.current = "";
 
-    if (currentIndex < questions.length - 1) {
-      setCurrentIndex((prev) => prev + 1);
-      // Unlock guard for the next question
-      isSubmittingRef.current = false;
-    } else {
-      setIsFinished(true);
-    }
-  };
+      // Move to next question or complete drill
+      if (currentIndex < questions.length - 1) {
+        setCurrentIndex((prev) => prev + 1);
+        isSubmittingRef.current = false;
+      } else {
+        setIsFinished(true);
+      }
+    },
+    [currentIndex, questions, isFinished],
+  );
 
-  // Ref hook to always capture current handleSubmitAnswer in timer closure
-  const handleSubmitRef = useRef(handleSubmitAnswer);
-  handleSubmitRef.current = handleSubmitAnswer;
-
-  // 10-second countdown effect
+  // 3. Timer Control
   useEffect(() => {
     if (isFinished || questions.length === 0) return;
 
     setTimeLeft(10);
+    isSubmittingRef.current = false;
 
-    const timer = setInterval(() => {
+    if (timerRef.current) {
+      clearInterval(timerRef.current);
+    }
+
+    timerRef.current = setInterval(() => {
       setTimeLeft((prev) => {
         if (prev <= 1) {
-          clearInterval(timer);
-          if (!isSubmittingRef.current) {
-            handleSubmitRef.current();
-          }
+          if (timerRef.current) clearInterval(timerRef.current);
+          handleSubmitAnswer();
           return 0;
         }
         return prev - 1;
       });
     }, 1000);
 
-    return () => clearInterval(timer);
-  }, [currentIndex, isFinished, questions]);
+    return () => {
+      if (timerRef.current) {
+        clearInterval(timerRef.current);
+      }
+    };
+  }, [currentIndex, isFinished, questions.length, handleSubmitAnswer]);
 
-  // --- SCORE CARD REVIEW VIEW ---
+  // Score Review Card View
   if (isFinished) {
-    const score = history.filter((h) => h.isCorrect).length;
+    // Safety fallback: limit history to maximum question batch size
+    const finalHistory = history.slice(0, questions.length || 20);
+    const score = finalHistory.filter((h) => h.isCorrect).length;
 
     return (
       <div className="max-w-2xl mx-auto p-6 space-y-6 bg-white rounded-2xl shadow-lg border border-gray-100">
@@ -173,19 +191,19 @@ export default function VocabTypingDrill({
             語彙テスト 結果 (Vocab Test Results)
           </h2>
           <p className="text-4xl font-black text-indigo-600 mt-2">
-            {score} / {history.length}
+            {score} / {finalHistory.length}
           </p>
           <p className="text-xs text-gray-500 mt-1">
             Accuracy:{" "}
-            {history.length > 0
-              ? Math.round((score / history.length) * 100)
+            {finalHistory.length > 0
+              ? Math.round((score / finalHistory.length) * 100)
               : 0}
             %
           </p>
         </div>
 
         <div className="space-y-4 max-h-[60vh] overflow-y-auto pr-1">
-          {history.map((item, idx) => (
+          {finalHistory.map((item, idx) => (
             <div
               key={`${item.question.id}-${idx}`}
               className={`p-4 rounded-xl border space-y-3 transition-colors duration-200 ${
@@ -199,14 +217,9 @@ export default function VocabTypingDrill({
                   <span className="text-xs font-bold text-gray-400">
                     Q{idx + 1}
                   </span>
-                  <div className="text-xl font-black text-gray-900 leading-tight">
+                  <div className="text-lg font-bold text-gray-900 leading-tight">
                     {item.question.promptMeaning}
                   </div>
-                  {item.question.promptWord && (
-                    <div className="text-sm text-gray-500 font-bold mt-0.5">
-                      {item.question.promptWord}
-                    </div>
-                  )}
                 </div>
 
                 <div className="text-right space-y-1">
@@ -233,14 +246,14 @@ export default function VocabTypingDrill({
                 </div>
               </div>
 
-              {/* Example Sentence Section */}
-              {item.question.exampleJa && (
+              {/* Example Sentence Review Display */}
+              {item.question.exampleJa ? (
                 <div className="pt-2 border-t border-gray-200/60 text-xs space-y-1">
                   <div className="font-bold text-indigo-900 flex items-center gap-1">
-                    <span>💬</span> Example Sentence:
+                    <span>💬</span> Example:
                   </div>
                   <div
-                    className="text-sm text-gray-800 leading-relaxed pl-3 border-l-2 border-indigo-300"
+                    className="text-sm text-gray-800 leading-relaxed pl-3 border-l-2 border-indigo-400"
                     dangerouslySetInnerHTML={{
                       __html: item.question.exampleJa,
                     }}
@@ -250,6 +263,10 @@ export default function VocabTypingDrill({
                       "{item.question.exampleEn}"
                     </div>
                   )}
+                </div>
+              ) : (
+                <div className="pt-1 text-[11px] text-gray-400 italic">
+                  No example sentence available for this word.
                 </div>
               )}
             </div>
@@ -276,10 +293,8 @@ export default function VocabTypingDrill({
     );
   }
 
-  // --- ACTIVE DRILL VIEW ---
   return (
     <div className="max-w-md mx-auto bg-white border border-gray-200 rounded-2xl shadow-sm p-6 space-y-6">
-      {/* Header with Timer */}
       <div className="flex justify-between items-center border-b pb-3">
         <span className="px-3 py-1 bg-indigo-100 text-indigo-800 font-bold text-xs rounded-full">
           Vocab Kana Typing Drill
@@ -300,29 +315,23 @@ export default function VocabTypingDrill({
         </div>
       </div>
 
-      {/* Target Word/Meaning Display */}
-      <div className="text-center py-6 space-y-2 bg-gray-50 rounded-2xl border border-gray-100">
+      {/* Target Word Display - Only English Meaning */}
+      <div className="text-center py-8 space-y-2 bg-gray-50 rounded-2xl border border-gray-100">
         <div className="text-xs text-gray-400 font-bold uppercase tracking-wider">
           Translate to Kana
         </div>
-        <div className="text-3xl font-black text-gray-900 tracking-wide px-2">
+        <div className="text-3xl font-black text-gray-900 tracking-wide px-4">
           {currentQ.promptMeaning}
         </div>
-        {currentQ.promptWord && (
-          <div className="text-sm text-indigo-600 font-bold">
-            {currentQ.promptWord}
-          </div>
-        )}
       </div>
 
-      {/* Input Form */}
       <form onSubmit={handleSubmitAnswer} className="space-y-4">
         <input
           ref={textInputRef}
           type="text"
           value={userInputText}
           onChange={(e) => setUserInputText(e.target.value)}
-          placeholder="Type in Kana (e.g. たべます)..."
+          placeholder="Type in Kana (e.g. こわします)..."
           className="w-full text-center text-2xl py-3 border-2 border-indigo-500 text-gray-900 bg-white rounded-xl focus:outline-none focus:ring-4 focus:ring-indigo-100 font-semibold"
           autoComplete="off"
           autoCorrect="off"
