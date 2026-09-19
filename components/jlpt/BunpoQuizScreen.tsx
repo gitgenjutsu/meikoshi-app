@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 
 export interface BunpoQuestion {
   id: string;
@@ -15,10 +15,6 @@ export interface BunpoQuestion {
   example_sentence?: string;
 }
 
-/**
- * Helper to render Japanese text with furigana in square brackets [brackets]
- * Example: 飛行機[ひこうき] -> <ruby>飛行機<rt>ひこうき</rt></ruby>
- */
 const renderFurigana = (text: string) => {
   if (!text) return "";
   const parts = text.split(/([一-龯ヶ々]+\[[ぁ-んァ-ヶ]+\])/g);
@@ -39,19 +35,62 @@ const renderFurigana = (text: string) => {
   });
 };
 
+/**
+ * Fisher-Yates shuffle helper
+ */
+function shuffleArray<T>(array: T[]): T[] {
+  const arr = [...array];
+  for (let i = arr.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [arr[i], arr[j]] = [arr[j], arr[i]];
+  }
+  return arr;
+}
+
+/**
+ * Randomize question order and optionally randomize option display
+ */
+function prepareRandomizedQuestions(
+  rawQuestions: BunpoQuestion[],
+): BunpoQuestion[] {
+  const shuffled = shuffleArray(rawQuestions);
+
+  return shuffled.map((q) => {
+    // 50% chance to swap option_a and option_b positions for variety
+    const shouldSwap = Math.random() < 0.5;
+    if (!shouldSwap) return q;
+
+    const newCorrect: "a" | "b" = q.correct_option === "a" ? "b" : "a";
+    return {
+      ...q,
+      option_a: q.option_b,
+      option_b: q.option_a,
+      correct_option: newCorrect,
+    };
+  });
+}
+
 export default function BunpoQuizScreen({
-  questions,
+  questions: initialQuestions,
 }: {
   questions: BunpoQuestion[];
 }) {
+  const [displayQuestions, setDisplayQuestions] = useState<BunpoQuestion[]>([]);
   const [selectedAnswers, setSelectedAnswers] = useState<
     Record<string, "a" | "b">
   >({});
   const [isSubmitted, setIsSubmitted] = useState(false);
 
-  const totalQuestions = questions.length;
+  // Initialize randomized set on mount or when new questions prop arrives
+  useEffect(() => {
+    if (initialQuestions && initialQuestions.length > 0) {
+      setDisplayQuestions(prepareRandomizedQuestions(initialQuestions));
+    }
+  }, [initialQuestions]);
+
+  const totalQuestions = displayQuestions.length;
   const answeredCount = Object.keys(selectedAnswers).length;
-  const isAllAnswered = answeredCount === totalQuestions;
+  const isAllAnswered = answeredCount === totalQuestions && totalQuestions > 0;
 
   const handleSelect = (questionId: string, option: "a" | "b") => {
     if (isSubmitted) return;
@@ -64,11 +103,27 @@ export default function BunpoQuizScreen({
     window.scrollTo({ top: 0, behavior: "smooth" });
   };
 
+  const handleRetake = () => {
+    // Reshuffle questions and choices, reset selection state
+    setDisplayQuestions(prepareRandomizedQuestions(initialQuestions));
+    setSelectedAnswers({});
+    setIsSubmitted(false);
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  };
+
   const calculateScore = () => {
-    return questions.reduce((score, q) => {
+    return displayQuestions.reduce((score, q) => {
       return selectedAnswers[q.id] === q.correct_option ? score + 1 : score;
     }, 0);
   };
+
+  if (!displayQuestions || displayQuestions.length === 0) {
+    return (
+      <div className="p-4 text-center text-gray-500">
+        No questions available for this lesson.
+      </div>
+    );
+  }
 
   return (
     <div className="max-w-2xl mx-auto p-4 space-y-6">
@@ -79,7 +134,8 @@ export default function BunpoQuizScreen({
             Classroom Bunpo Test
           </h1>
           <p className="text-xs text-gray-500">
-            Select one option per question. Guess if unsure!
+            Select one option per question. Questions are randomized each
+            attempt!
           </p>
         </div>
 
@@ -97,7 +153,7 @@ export default function BunpoQuizScreen({
 
       {/* QUESTION LIST */}
       <div className="space-y-6">
-        {questions.map((q) => {
+        {displayQuestions.map((q, idx) => {
           const userAnswer = selectedAnswers[q.id];
           const isCorrect = userAnswer === q.correct_option;
 
@@ -114,7 +170,7 @@ export default function BunpoQuizScreen({
             >
               {/* Question Text */}
               <div className="font-medium text-lg text-gray-900 mb-3 leading-relaxed">
-                <span className="font-bold mr-2">{q.question_number}.</span>
+                <span className="font-bold mr-2">{idx + 1}.</span>
                 {renderFurigana(q.sentence_pre)}
                 <span className="inline-block px-2 py-0.5 bg-gray-100 rounded border mx-1 font-mono text-blue-600 text-sm">
                   {isSubmitted
@@ -200,14 +256,14 @@ export default function BunpoQuizScreen({
         })}
       </div>
 
-      {/* SINGLE SUBMIT ACTION BAR */}
+      {/* SINGLE SUBMIT / RETAKE ACTION BAR */}
       <div className="sticky bottom-4 bg-white p-4 rounded-xl shadow-lg border border-gray-200 mt-8">
         {!isSubmitted ? (
           <div className="space-y-2">
             {!isAllAnswered && (
               <p className="text-xs text-amber-600 text-center font-medium">
                 Please select an answer for all questions ({answeredCount}/
-                {totalQuestions} answered). Guess if you aren't sure!
+                {totalQuestions} answered).
               </p>
             )}
             <button
@@ -220,10 +276,10 @@ export default function BunpoQuizScreen({
           </div>
         ) : (
           <button
-            onClick={() => window.location.reload()}
-            className="w-full py-3 bg-gray-800 hover:bg-gray-900 text-white font-bold rounded-lg transition-colors"
+            onClick={handleRetake}
+            className="w-full py-3.5 bg-gray-900 hover:bg-black text-white font-bold rounded-lg transition-colors shadow-md"
           >
-            Retake Test
+            🔄 Retake Test
           </button>
         )}
       </div>
