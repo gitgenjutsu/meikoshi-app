@@ -2,7 +2,7 @@
 
 import React from "react";
 
-export type SectionType = "VOCAB" | "KANJI" | "KAIWA";
+export type SectionType = "VOCAB" | "KANJI" | "KAIWA" | "BUNPOU";
 
 interface SectionSelectorProps {
   onSelectSection: (section: SectionType) => void;

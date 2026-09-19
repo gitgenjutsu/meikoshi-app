@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
+import imageCompression from "browser-image-compression";
 import { supabase } from "@/lib/supabaseClient";
 import { ChapterUploader, ImagePreview } from "./jlpt/ChapterUploader";
 import { AvailableLessons } from "./jlpt/AvailableLessons";
@@ -84,6 +85,12 @@ export default function ClassroomDrillsHub({
           colName: "lesson_number",
           apiRoute: "/api/extract-kaiwa",
         };
+      case "BUNPOU":
+        return {
+          tableName: "jlpt_grammar",
+          colName: "lesson_number",
+          apiRoute: "/api/extract-bunpou",
+        };
     }
   };
 
@@ -119,16 +126,47 @@ export default function ClassroomDrillsHub({
     setLoading(false);
   };
 
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  // Client-Side Image Compression Handler
+  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     if (!e.target.files) return;
 
     const filesArray = Array.from(e.target.files);
-    const newPreviews: ImagePreview[] = filesArray.map((file) => ({
-      file,
-      url: URL.createObjectURL(file),
-    }));
 
-    setSelectedImages((prev) => [...prev, ...newPreviews]);
+    const compressionOptions = {
+      maxSizeMB: 1.2, // Limits image to ~1.2MB max
+      maxWidthOrHeight: 1920, // Resizes ultra-high resolution mobile photos (4K -> 1080p)
+      useWebWorker: true,
+    };
+
+    showToast("Processing & optimizing images...", "info");
+
+    try {
+      const processedFiles = await Promise.all(
+        filesArray.map(async (file) => {
+          // Skip if already small (e.g. PC screenshots under 1MB)
+          if (file.size < 1024 * 1024) return file;
+          try {
+            return await imageCompression(file, compressionOptions);
+          } catch (err) {
+            console.error("Compression failed for file:", file.name, err);
+            return file; // Fallback to raw file if compression fails
+          }
+        }),
+      );
+
+      const newPreviews: ImagePreview[] = processedFiles.map((file) => ({
+        file,
+        url: URL.createObjectURL(file),
+      }));
+
+      setSelectedImages((prev) => [...prev, ...newPreviews]);
+    } catch (err) {
+      console.error("Error compressing images:", err);
+      showToast(
+        "Error optimizing images. Try selecting fewer photos.",
+        "error",
+      );
+    }
   };
 
   const handleRemoveImage = (indexToRemove: number) => {
@@ -235,8 +273,10 @@ export default function ClassroomDrillsHub({
     }
 
     if (selectedSection === "VOCAB") {
-      // Launch classroom drill typing component
       setActiveVocabData(data);
+    } else if (selectedSection === "BUNPOU") {
+      // Launch Form Drill Engine for Bunpou practice questions
+      setActiveFormQuestions(data);
     }
 
     setLoading(false);
