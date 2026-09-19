@@ -10,6 +10,7 @@ import KaiwaDashboard from "./KaiwaDashboard";
 import KanjiTypingDrill from "@/components/jlpt/KanjiTypingDrill";
 import FormDrillEngine from "@/components/jlpt/FormDrillEngine";
 import VocabTypingDrill from "@/components/jlpt/VocabTypingDrill";
+import BunpoQuizScreen from "@/components/jlpt/BunpoQuizScreen";
 
 interface ClassroomDrillsHubProps {
   onBack: () => void;
@@ -44,6 +45,9 @@ export default function ClassroomDrillsHub({
   const [activeFormQuestions, setActiveFormQuestions] = useState<any[] | null>(
     null,
   );
+  const [activeBunpoQuestions, setActiveBunpoQuestions] = useState<
+    any[] | null
+  >(null);
 
   // Upload Form States
   const [chapterInput, setChapterInput] = useState<string>("");
@@ -87,9 +91,9 @@ export default function ClassroomDrillsHub({
         };
       case "BUNPOU":
         return {
-          tableName: "jlpt_grammar",
+          tableName: "jlpt_bunpo_tests",
           colName: "lesson_number",
-          apiRoute: "/api/extract-bunpou",
+          apiRoute: "/api/extract-bunpo",
         };
     }
   };
@@ -133,8 +137,8 @@ export default function ClassroomDrillsHub({
     const filesArray = Array.from(e.target.files);
 
     const compressionOptions = {
-      maxSizeMB: 1.2, // Limits image to ~1.2MB max
-      maxWidthOrHeight: 1920, // Resizes ultra-high resolution mobile photos (4K -> 1080p)
+      maxSizeMB: 1.2,
+      maxWidthOrHeight: 1920,
       useWebWorker: true,
     };
 
@@ -143,13 +147,12 @@ export default function ClassroomDrillsHub({
     try {
       const processedFiles = await Promise.all(
         filesArray.map(async (file) => {
-          // Skip if already small (e.g. PC screenshots under 1MB)
           if (file.size < 1024 * 1024) return file;
           try {
             return await imageCompression(file, compressionOptions);
           } catch (err) {
             console.error("Compression failed for file:", file.name, err);
-            return file; // Fallback to raw file if compression fails
+            return file;
           }
         }),
       );
@@ -275,8 +278,8 @@ export default function ClassroomDrillsHub({
     if (selectedSection === "VOCAB") {
       setActiveVocabData(data);
     } else if (selectedSection === "BUNPOU") {
-      // Launch Form Drill Engine for Bunpou practice questions
-      setActiveFormQuestions(data);
+      // Launch Bunpo Classroom Drill Engine
+      setActiveBunpoQuestions(data);
     }
 
     setLoading(false);
@@ -380,6 +383,20 @@ export default function ClassroomDrillsHub({
         questions={activeFormQuestions}
         onClose={() => setActiveFormQuestions(null)}
       />
+    );
+  }
+
+  if (activeBunpoQuestions) {
+    return (
+      <div className="space-y-4">
+        <button
+          onClick={() => setActiveBunpoQuestions(null)}
+          className="text-xs font-semibold text-indigo-600 hover:text-indigo-800 flex items-center gap-1"
+        >
+          &larr; Exit Drill
+        </button>
+        <BunpoQuizScreen questions={activeBunpoQuestions} />
+      </div>
     );
   }
 

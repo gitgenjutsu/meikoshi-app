@@ -16,7 +16,7 @@ export const SectionSelector: React.FC<SectionSelectorProps> = ({
       <h2 className="text-xl font-bold text-gray-900 mb-4">
         Select Drill Section
       </h2>
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4 flex-wrap">
         <button
           onClick={() => onSelectSection("VOCAB")}
           className="p-6 bg-white border border-gray-200 rounded-xl hover:border-blue-500 hover:shadow-md transition text-left"
@@ -47,6 +47,17 @@ export const SectionSelector: React.FC<SectionSelectorProps> = ({
           <h3 className="font-bold text-gray-900 text-lg">Kaiwa (Dialogue)</h3>
           <p className="text-xs text-gray-500 mt-1">
             Conversation patterns & particle responses
+          </p>
+        </button>
+
+        <button
+          onClick={() => onSelectSection("BUNPOU")}
+          className="p-6 bg-white border border-gray-200 rounded-xl hover:border-blue-500 hover:shadow-md transition text-left"
+        >
+          <div className="text-2xl mb-2">⚖️</div>
+          <h3 className="font-bold text-gray-900 text-lg">Bunpo (Grammar)</h3>
+          <p className="text-xs text-gray-500 mt-1">
+            Binary choice classroom tests with score breakdown
           </p>
         </button>
       </div>
