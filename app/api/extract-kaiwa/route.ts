@@ -1,6 +1,10 @@
 import { NextResponse } from "next/server";
 import { GoogleGenerativeAI, SchemaType } from "@google/generative-ai";
 import { createClient } from "@supabase/supabase-js";
+import {
+  generateContentWithSpikeCheck,
+  GeminiServiceSpikeError,
+} from "@/lib/gemini";
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
 const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
@@ -164,7 +168,11 @@ CRITICAL INSTRUCTIONS FOR DIALOGUE RECONSTRUCTION & GRAMMAR CONJUGATION:
 Return ONLY valid JSON matching the required schema.
 `;
 
-    const result = await model.generateContent([prompt, ...imageParts]);
+    // Wrap execution with spike detection
+    const result = await generateContentWithSpikeCheck(model, [
+      prompt,
+      ...imageParts,
+    ]);
     const extractedExercises = JSON.parse(result.response.text());
 
     const formattedRows = extractedExercises.map((ex: any) => ({
@@ -201,8 +209,19 @@ Return ONLY valid JSON matching the required schema.
     });
   } catch (error: any) {
     console.error("Multi-Page Kaiwa OCR Error:", error);
+
+    if (error instanceof GeminiServiceSpikeError) {
+      return NextResponse.json(
+        { success: false, error: error.message },
+        { status: 503 },
+      );
+    }
+
     return NextResponse.json(
-      { error: error?.message || "Failed to process image with Gemini AI." },
+      {
+        success: false,
+        error: error?.message || "Failed to process image with Gemini AI.",
+      },
       { status: 500 },
     );
   }

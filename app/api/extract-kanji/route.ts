@@ -1,6 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { GoogleGenerativeAI, SchemaType, Schema } from "@google/generative-ai";
 import { createClient } from "@supabase/supabase-js";
+import {
+  generateContentWithSpikeCheck,
+  GeminiServiceSpikeError,
+} from "@/lib/gemini";
 
 export const maxDuration = 60;
 export const dynamic = "force-dynamic";
@@ -160,7 +164,11 @@ For each Kanji character:
 3. For each vocabulary word, include its reading (Kana), English meaning, a short Japanese sentence using <ruby> and <rt> tags for furigana on kanji, and its English translation.
     `.trim();
 
-    const result = await model.generateContent([prompt, ...imageParts]);
+    // Wrapped execution check
+    const result = await generateContentWithSpikeCheck(model, [
+      prompt,
+      ...imageParts,
+    ]);
     const responseText = result.response.text();
     const extractedData = JSON.parse(responseText);
 
@@ -205,6 +213,14 @@ For each Kanji character:
     });
   } catch (err: any) {
     console.error("Extract Kanji error:", err);
+
+    if (err instanceof GeminiServiceSpikeError) {
+      return NextResponse.json(
+        { success: false, error: err.message },
+        { status: 503 },
+      );
+    }
+
     return NextResponse.json(
       { success: false, error: err.message || "Internal server error" },
       { status: 500 },

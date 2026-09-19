@@ -1,6 +1,10 @@
 import { NextResponse } from "next/server";
 import { GoogleGenerativeAI, SchemaType } from "@google/generative-ai";
 import { supabase } from "@/lib/supabaseClient";
+import {
+  generateContentWithSpikeCheck,
+  GeminiServiceSpikeError,
+} from "@/lib/gemini";
 
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || "");
 
@@ -87,7 +91,11 @@ export async function POST(req: Request) {
       - 'example_en': English translation of example_ja.
     `;
 
-    const result = await model.generateContent([prompt, ...imageParts]);
+    // Wrap call to catch 503 / high demand error
+    const result = await generateContentWithSpikeCheck(model, [
+      prompt,
+      ...imageParts,
+    ]);
     const extractedVocab = JSON.parse(result.response.text());
 
     const formattedRows = extractedVocab.map((item: any) => ({
@@ -113,8 +121,17 @@ export async function POST(req: Request) {
     return NextResponse.json({ success: true, data });
   } catch (error: any) {
     console.error("Multi-Page OCR Error:", error);
+
+    // Return custom status & message when API is experiencing demand spikes
+    if (error instanceof GeminiServiceSpikeError) {
+      return NextResponse.json(
+        { success: false, error: error.message },
+        { status: 503 },
+      );
+    }
+
     return NextResponse.json(
-      { error: error.message || "Failed to process request." },
+      { success: false, error: error.message || "Failed to process request." },
       { status: 500 },
     );
   }
