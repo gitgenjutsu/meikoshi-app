@@ -126,7 +126,8 @@ export const AvailableLessons: React.FC<AvailableLessonsProps> = ({
           <div className="relative w-full sm:w-44">
             <input
               type="text"
-              placeholder="Search L32, L39..."
+              inputMode="numeric"
+              placeholder="Search 32, 39..."
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
               className="w-full pl-3 pr-7 py-1.5 text-xs text-gray-900 placeholder-gray-400 font-medium bg-gray-50 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white focus:text-gray-900 transition-colors"
