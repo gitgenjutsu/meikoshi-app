@@ -93,13 +93,37 @@ export async function POST(req: NextRequest) {
     });
 
     const prompt = `
-Extract and generate a complete binary-choice classroom grammar test (文法チェック) for Lesson ${lessonNumber} based on the attached textbook grammar notes and exercises.
+      You are a senior Japanese language instructor at a JLPT institute creating official "Bunpo Check" (文法チェック) unit test papers for Minna no Nihongo lessons.
 
-RULES:
-1. Generate questions where students pick between option_a or option_b (e.g. passive vs active verbs, particle choices like から vs で, に vs を).
-2. Attach Furigana in square brackets for ALL Kanji in sentence_pre, sentence_post, option_a, option_b, and example_sentence (e.g. 飛行機[ひこうき]).
-3. Set correct_option to strictly 'a' or 'b'.
-4. Provide a clear grammar_rule_ref and explanation for post-quiz review.
+      Analyze the provided textbook image(s) (e.g., Renshuu B, Renshuu C, or Grammar Explanations). Your goal is NOT to simply OCR the textbook, but to TRANSFORMATIONALLY GENERATE 8 to 12 classroom-style A/B binary choice test questions based on the exact grammar points introduced in that lesson.
+
+      Follow these strict test-design guidelines based on official exam structures:
+
+      1. CORE GRAMMAR FORM TARGETING:
+        - Identify the primary grammar focus of the chapter (e.g., L35 conditional 〜ば/〜なら, L37 passive 〜れる/〜られる, L38 nominalization 〜の/〜こと).
+        - Create binary choice pairs (Option A vs Option B) that pit the CORRECT rule against a COMMON STUDENT CONJUGATION ERROR:
+          * Example (i-Adj Conditional): 新しければ vs 新しいければ
+          * Example (Passive Conjugation): 聞かれました vs 聞かられました
+          * Example (Transitive/Intransitive): 起きます vs 起こします
+          * Example (Particle Selection): から vs で (materials), に vs で (events/locations)
+
+      2. TRANSFORMATION PATTERNS (ACTIVE TO PASSIVE / INDIRECT):
+        - Include sentence transformation items when applicable. Format the prompt/context clearly inside sentence_pre:
+          * Example: "兄は私の日記を読みました。 → [?] 兄に日記を読まれました。" 
+          * Options: a) 私は  b) 私の日記は
+
+      3. DIALOGUE & CONTEXTUAL REASONING:
+        - For items testing adverbs, sentence-ending expressions, or interrogatives, construct 2-speaker dialogues (A: ... / B: ...):
+          * A: 春になれば、このへんで花見ができますよ。
+          * B: そうですか。それは [ たのしい / たのしみ ] です。
+
+      4. STRUCTURAL REQUIREMENTS:
+        - Split complex textbook concepts into crisp, single-target binary choices (a) vs (b).
+        - Ensure furigana readings are included in standard bracket format: 漢字[かんじ].
+        - Provide the specific grammar rule reference name in grammar_rule_ref (e.g., "L35: Conditionals (~ば)", "L37: Passive Agent Particle (によって)").
+        - Provide clear, concise explanations in English for why the chosen option is correct.
+
+      Output strictly valid JSON matching the required schema.
 `;
 
     const result = await generateContentWithSpikeCheck(model, [
