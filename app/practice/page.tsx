@@ -467,7 +467,7 @@ export default function PracticePage() {
                     </p>
                   </button>
 
-                  <button
+                  {/* <button
                     disabled
                     onClick={() => startQuiz("VOCABULARY")}
                     className="p-5 bg-white border border-gray-200 rounded-xl hover:border-blue-500 hover:shadow-md transition text-left disabled:opacity-50 disabled:cursor-not-allowed"
@@ -501,7 +501,7 @@ export default function PracticePage() {
                     <p className="text-xs text-gray-500 mt-1">
                       10s timed per question full deck drill
                     </p>
-                  </button>
+                  </button> */}
                 </div>
               </div>
             )}

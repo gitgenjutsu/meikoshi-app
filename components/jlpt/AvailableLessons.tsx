@@ -36,14 +36,44 @@ export const AvailableLessons: React.FC<AvailableLessonsProps> = ({
     ch.toString().includes(searchTerm.trim()),
   );
 
-  // Dynamic Semester Range based on Section (Kanji vs General Bunpo/Vocab/Kaiwa)
+  // Dynamic Semester Ranges mapped by Level (N5 vs N4) and Section (Kanji vs General)
   const isKanjiSection = selectedSection === "KANJI";
-  const sem1Min = isKanjiSection ? 19 : 26;
-  const sem1Max = isKanjiSection ? 31 : 38;
-  const sem2Min = isKanjiSection ? 32 : 39;
-  const sem2Max = isKanjiSection ? 45 : 50;
+  const isN5 = selectedLevel.toUpperCase() === "N5";
 
-  // Grouping logic based on active section ranges
+  let sem1Min: number, sem1Max: number, sem2Min: number, sem2Max: number;
+
+  if (isN5) {
+    if (isKanjiSection) {
+      // N5 Kanji Syllabus
+      sem1Min = 1;
+      sem1Max = 5;
+      sem2Min = 6;
+      sem2Max = 18;
+    } else {
+      // N5 General (Vocab, Bunpo, Kaiwa)
+      sem1Min = 1;
+      sem1Max = 13;
+      sem2Min = 14;
+      sem2Max = 25;
+    }
+  } else {
+    // Default to N4 (and higher)
+    if (isKanjiSection) {
+      // N4 Kanji Syllabus
+      sem1Min = 19;
+      sem1Max = 31;
+      sem2Min = 32;
+      sem2Max = 45;
+    } else {
+      // N4 General (Vocab, Bunpo, Kaiwa)
+      sem1Min = 26;
+      sem1Max = 38;
+      sem2Min = 39;
+      sem2Max = 50;
+    }
+  }
+
+  // Grouping logic based on resolved ranges
   const sem1Chapters = filteredChapters.filter(
     (ch) => ch >= sem1Min && ch <= sem1Max,
   );
@@ -127,7 +157,7 @@ export const AvailableLessons: React.FC<AvailableLessonsProps> = ({
             <input
               type="text"
               inputMode="numeric"
-              placeholder="Search 32, 39..."
+              placeholder={`Search ${sem1Min}, ${sem2Min}...`}
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
               className="w-full pl-3 pr-7 py-1.5 text-xs text-gray-900 placeholder-gray-400 font-medium bg-gray-50 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white focus:text-gray-900 transition-colors"
