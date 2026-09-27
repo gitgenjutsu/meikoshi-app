@@ -1,16 +1,7 @@
 "use client";
 
 import React, { useState, useEffect, useRef } from "react";
-import {
-  Mic,
-  MicOff,
-  Volume2,
-  Clock,
-  Award,
-  ChevronRight,
-  RotateCcw,
-  X,
-} from "lucide-react";
+import { Mic, MicOff, Volume2, Award, X, Eye, EyeOff } from "lucide-react";
 
 interface DialogueLine {
   speaker: string;
@@ -40,12 +31,48 @@ interface KaiwaDashboardProps {
   onClose?: () => void;
 }
 
+/**
+ * Custom Furigana Renderer with global show/hide control.
+ * Parses Kanji[furigana] syntax and hides/shows <rt> readings.
+ */
+const renderFuriganaText = (rawText: string, showFurigana: boolean = true) => {
+  if (!rawText) return null;
+
+  // Match Kanji[furigana] patterns or standard text
+  const parts = rawText.split(/([一-龯ヶ々]+\[[ぁ-んァ-ヶ]+\])/g);
+
+  return (
+    <span>
+      {parts.map((part, idx) => {
+        const match = part.match(/([一-龯ヶ々]+)\[([ぁ-んァ-ヶ]+)\]/);
+        if (match) {
+          return (
+            <ruby key={idx} className="px-0.5">
+              {match[1]}
+              {showFurigana && (
+                <rt className="text-[0.65em] text-indigo-600 font-normal animate-fadeIn">
+                  {match[2]}
+                </rt>
+              )}
+            </ruby>
+          );
+        }
+        // Retain HTML tags if present (e.g., <u> text </u>)
+        return <span key={idx} dangerouslySetInnerHTML={{ __html: part }} />;
+      })}
+    </span>
+  );
+};
+
 export default function KaiwaDashboard({
   exercises,
   onClose,
 }: KaiwaDashboardProps) {
   const [selectedExerciseIdx, setSelectedExerciseIdx] = useState<number>(0);
   const [selectedVarIdx, setSelectedVarIdx] = useState<number>(0);
+
+  // Single global toggle for the entire dialogue script Kana reading
+  const [showFurigana, setShowFurigana] = useState<boolean>(true);
 
   // Speech Recognition & Timer state
   const [isListening, setIsListening] = useState<boolean>(false);
@@ -61,6 +88,11 @@ export default function KaiwaDashboard({
   const currentVariation =
     currentExercise?.variations?.[selectedVarIdx] ||
     currentExercise?.variations?.[0];
+
+  const currentDialogueLines =
+    currentVariation?.full_lines && currentVariation.full_lines.length > 0
+      ? currentVariation.full_lines
+      : currentExercise?.dialogue_template?.lines || [];
 
   // Helper to extract clean Japanese text (strips furigana brackets & HTML)
   const cleanJapanese = (text: string) => {
@@ -78,9 +110,9 @@ export default function KaiwaDashboard({
     }
     // Fallback if legacy structure
     return (
-      (currentExercise?.dialogue_template.lines[0]?.text || "") +
+      (currentExercise?.dialogue_template?.lines?.[0]?.text || "") +
       (currentVariation.full_b_line || "") +
-      (currentExercise?.dialogue_template.lines[2]?.text || "")
+      (currentExercise?.dialogue_template?.lines?.[2]?.text || "")
     );
   };
 
@@ -239,7 +271,7 @@ export default function KaiwaDashboard({
 
   if (!exercises || exercises.length === 0) {
     return (
-      <div className="p-8 text-center text-gray-500 bg-white rounded-xl border relative">
+      <div className="p-8 text-center text-gray-500 bg-white rounded-xl border relative font-sans">
         {onClose && (
           <button
             onClick={onClose}
@@ -258,19 +290,10 @@ export default function KaiwaDashboard({
     );
   }
 
-  // Render text with Furigana & HTML (e.g. <u>)
-  const renderFormattedText = (rawText: string) => {
-    const rubyFormatted = rawText.replace(
-      /([一-龯]+)\[(.*?)\]/g,
-      "<ruby>$1<rt>$2</rt></ruby>",
-    );
-    return <span dangerouslySetInnerHTML={{ __html: rubyFormatted }} />;
-  };
-
   return (
-    <div className="max-w-4xl mx-auto p-4 space-y-6">
+    <div className="max-w-4xl mx-auto p-4 space-y-6 font-sans">
       {/* Header Navigation Bar */}
-      <div className="flex items-center justify-between flex-wrap gap-3 border-b pb-3">
+      <div className="flex items-center justify-between flex-wrap gap-3 border-b border-gray-200 pb-3">
         {/* Exercise Card Selection (C1, C2, C3) */}
         <div className="flex gap-3">
           {exercises.map((ex, idx) => (
@@ -304,16 +327,16 @@ export default function KaiwaDashboard({
       </div>
 
       {/* Selected Exercise Header */}
-      <div className="bg-white p-5 rounded-xl border shadow-sm space-y-4">
+      <div className="bg-white p-5 rounded-xl border border-gray-200 shadow-sm space-y-4">
         <div className="flex justify-between items-center">
-          <span className="text-sm font-bold uppercase tracking-wide text-blue-600 bg-blue-50 px-3 py-1 rounded-full">
+          <span className="text-sm font-bold uppercase tracking-wide text-blue-600 bg-blue-50 px-3 py-1 rounded-full border border-blue-100">
             Grammar: {currentExercise?.grammar_point}
           </span>
         </div>
 
         {/* Variation Sub-Tabs (れい, 1, 2) */}
         <div className="flex gap-2 pt-2">
-          {currentExercise?.variations.map((v, vIdx) => (
+          {currentExercise?.variations?.map((v, vIdx) => (
             <button
               key={vIdx}
               onClick={() => {
@@ -322,7 +345,7 @@ export default function KaiwaDashboard({
               }}
               className={`px-4 py-1.5 rounded-md text-sm font-medium transition ${
                 selectedVarIdx === vIdx
-                  ? "bg-indigo-600 text-white"
+                  ? "bg-indigo-600 text-white shadow-xs"
                   : "bg-gray-100 text-gray-600 hover:bg-gray-200"
               }`}
             >
@@ -337,26 +360,52 @@ export default function KaiwaDashboard({
         {currentVariation?.prompt_text && (
           <div className="bg-amber-50 border border-amber-200 p-3 rounded-lg text-amber-900 text-sm">
             <strong>Prompt Cues: </strong>
-            {renderFormattedText(currentVariation.prompt_text)}
+            {renderFuriganaText(currentVariation.prompt_text, true)}
           </div>
         )}
 
-        {/* Dialogue Display */}
+        {/* Dialogue Display Section */}
         <div className="space-y-3 pt-2">
-          <h4 className="text-xs font-bold text-gray-400 uppercase tracking-wider">
-            Target Dialogue Script
-          </h4>
-          <div className="space-y-2 bg-gray-50 p-4 rounded-lg border">
-            {(
-              currentVariation?.full_lines ||
-              currentExercise?.dialogue_template.lines
-            ).map((line, lIdx) => (
-              <div key={lIdx} className="flex gap-3 text-lg leading-relaxed">
-                <span className="font-bold text-blue-600 w-6">
+          <div className="flex items-center justify-between">
+            <h4 className="text-xs font-bold text-gray-500 uppercase tracking-wider">
+              Target Dialogue Script
+            </h4>
+
+            {/* SINGLE BUTTON TO TOGGLE SCRIPT AT ONCE */}
+            <button
+              type="button"
+              onClick={() => setShowFurigana((prev) => !prev)}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition border ${
+                showFurigana
+                  ? "bg-indigo-50 text-indigo-600 border-indigo-200 hover:bg-indigo-100"
+                  : "bg-gray-50 text-gray-600 border-gray-200 hover:bg-gray-100"
+              }`}
+            >
+              {showFurigana ? (
+                <>
+                  <Eye className="w-3.5 h-3.5" />
+                  <span>Kana On</span>
+                </>
+              ) : (
+                <>
+                  <EyeOff className="w-3.5 h-3.5" />
+                  <span>Show Kana</span>
+                </>
+              )}
+            </button>
+          </div>
+
+          <div className="space-y-2.5 bg-gray-50 p-4 rounded-xl border border-gray-200">
+            {currentDialogueLines.map((line, lIdx) => (
+              <div
+                key={lIdx}
+                className="flex items-start gap-3 text-lg leading-relaxed p-1.5"
+              >
+                <span className="font-bold text-blue-600 w-6 pt-0.5 select-none">
                   {line.speaker}:
                 </span>
-                <div className="text-gray-800">
-                  {renderFormattedText(line.text)}
+                <div className="text-gray-900 font-medium flex-1">
+                  {renderFuriganaText(line.text, showFurigana)}
                 </div>
               </div>
             ))}
@@ -364,7 +413,7 @@ export default function KaiwaDashboard({
         </div>
 
         {/* Action Controls */}
-        <div className="flex flex-wrap items-center justify-between gap-4 pt-4 border-t">
+        <div className="flex flex-wrap items-center justify-between gap-4 pt-4 border-t border-gray-100">
           <button
             onClick={handlePlayNativeAudio}
             className="flex items-center gap-2 bg-slate-800 text-white px-4 py-2 rounded-lg hover:bg-slate-700 transition"
@@ -397,11 +446,13 @@ export default function KaiwaDashboard({
 
       {/* Score & Evaluation Feedback Result */}
       {score !== null && (
-        <div className="bg-white p-5 rounded-xl border shadow-sm space-y-3">
-          <div className="flex items-center justify-between border-b pb-3">
+        <div className="bg-white p-5 rounded-xl border border-gray-200 shadow-sm space-y-3">
+          <div className="flex items-center justify-between border-b border-gray-100 pb-3">
             <div className="flex items-center gap-2">
               <Award className="w-6 h-6 text-yellow-500" />
-              <h3 className="font-bold text-lg">Evaluation Score</h3>
+              <h3 className="font-bold text-lg text-gray-900">
+                Evaluation Score
+              </h3>
             </div>
             <div className="text-2xl font-black text-blue-600">
               {score} / 10
@@ -411,11 +462,11 @@ export default function KaiwaDashboard({
           <p className="font-medium text-gray-700">{feedback}</p>
 
           {transcript && (
-            <div className="bg-gray-50 p-3 rounded-lg border text-sm text-gray-600 space-y-1">
+            <div className="bg-gray-50 p-3 rounded-lg border border-gray-200 text-sm text-gray-600 space-y-1">
               <span className="font-semibold text-gray-500 block">
                 Recognized Spoken Speech:
               </span>
-              <p className="italic">"{transcript}"</p>
+              <p className="italic">&quot;{transcript}&quot;</p>
             </div>
           )}
         </div>
