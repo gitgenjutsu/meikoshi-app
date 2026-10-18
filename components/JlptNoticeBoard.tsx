@@ -95,6 +95,74 @@ export default function JlptNoticeBoard({
     });
   };
 
+  // --- DYNAMIC STATUS COMPUTATIONS ---
+  const now = new Date();
+
+  // 1. Registration Status
+  const getRegistrationStatus = () => {
+    if (!notice.registration_start || !notice.registration_end) {
+      return { label: "TBA", badgeClass: "bg-green-100 text-green-600" };
+    }
+    const regStart = new Date(notice.registration_start);
+    const regEnd = new Date(notice.registration_end);
+
+    if (now < regStart) {
+      return { label: "Upcoming", badgeClass: "bg-blue-100 text-blue-800" };
+    } else if (now >= regStart && now <= regEnd) {
+      return {
+        label: "Open Now",
+        badgeClass: "bg-emerald-100 text-emerald-800 animate-pulse",
+      };
+    } else {
+      return { label: "Closed", badgeClass: "bg-red-100 text-red-800" };
+    }
+  };
+
+  // 2. Exam Date Status
+  const getExamStatus = () => {
+    if (!notice.event_date) {
+      return { label: "TBA", badgeClass: "bg-gray-100 text-gray-600" };
+    }
+    const examDate = new Date(notice.event_date);
+    // Same-day check
+    const isToday =
+      now.getFullYear() === examDate.getFullYear() &&
+      now.getMonth() === examDate.getMonth() &&
+      now.getDate() === examDate.getDate();
+
+    if (isToday) {
+      return {
+        label: "Exam Today",
+        badgeClass: "bg-red-100 text-red-800 animate-bounce",
+      };
+    } else if (now < examDate) {
+      return { label: "Upcoming", badgeClass: "bg-blue-100 text-blue-800" };
+    } else {
+      return { label: "Completed", badgeClass: "bg-gray-100 text-gray-600" };
+    }
+  };
+
+  // 3. Results Status
+  const getResultsStatus = () => {
+    if (!notice.event_date) {
+      return { label: "Scheduled", badgeClass: "bg-gray-100 text-gray-600" };
+    }
+    const examDate = new Date(notice.event_date);
+
+    if (now < examDate) {
+      return { label: "Scheduled", badgeClass: "bg-gray-100 text-gray-600" };
+    } else {
+      return {
+        label: "Available Now",
+        badgeClass: "bg-emerald-100 text-emerald-800",
+      };
+    }
+  };
+
+  const regStatus = getRegistrationStatus();
+  const examStatus = getExamStatus();
+  const resultsStatus = getResultsStatus();
+
   return (
     <div className="w-full max-w-5xl mx-auto space-y-6 pb-10">
       {/* HERO / COUNTDOWN BANNER */}
@@ -146,12 +214,20 @@ export default function JlptNoticeBoard({
         </div>
       </div>
 
-      {/* KEY DATES GRID */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+      {/* KEY DATES & DYNAMIC STATUS CARDS */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4">
+        {/* CARD 1: REGISTRATION */}
         <div className="bg-white p-5 rounded-2xl border border-gray-200 shadow-sm space-y-2">
-          <span className="text-xs font-bold text-gray-400 uppercase tracking-wider">
-            Registration Window
-          </span>
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-bold text-gray-400 uppercase tracking-wider">
+              Registration
+            </span>
+            <span
+              className={`px-2 py-0.5 text-[10px] font-extrabold rounded-full ${regStatus.badgeClass}`}
+            >
+              {regStatus.label}
+            </span>
+          </div>
           <p className="text-sm font-bold text-gray-900">
             {formatDate(notice.registration_start)} –{" "}
             {formatDate(notice.registration_end)}
@@ -161,30 +237,71 @@ export default function JlptNoticeBoard({
           </p>
         </div>
 
+        {/* CARD 2: EXAM DATE */}
         <div className="bg-white p-5 rounded-2xl border border-gray-200 shadow-sm space-y-2">
-          <span className="text-xs font-bold text-gray-400 uppercase tracking-wider">
-            Exam Date
-          </span>
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-bold text-gray-400 uppercase tracking-wider">
+              Exam Date
+            </span>
+            <span
+              className={`px-2 py-0.5 text-[10px] font-extrabold rounded-full ${examStatus.badgeClass}`}
+            >
+              {examStatus.label}
+            </span>
+          </div>
           <p className="text-sm font-bold text-gray-900">
             {formatDate(notice.event_date)}
           </p>
           <p className="text-xs text-gray-500">
-            Report early with your printed test voucher & photo ID.
+            Report with printed voucher & valid photo ID.
           </p>
         </div>
 
+        {/* CARD 3: RESULTS RELEASE SCHEDULE */}
         <div className="bg-white p-5 rounded-2xl border border-gray-200 shadow-sm space-y-2">
-          <span className="text-xs font-bold text-gray-400 uppercase tracking-wider">
-            Official Guidelines
-          </span>
-          <p className="text-sm font-bold text-gray-900">Online Access</p>
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-bold text-gray-400 uppercase tracking-wider">
+              Results Schedule
+            </span>
+            <span
+              className={`px-2 py-0.5 text-[10px] font-extrabold rounded-full ${resultsStatus.badgeClass}`}
+            >
+              {resultsStatus.label}
+            </span>
+          </div>
+          <p className="text-sm font-bold text-gray-900">
+            Late Jan / Early Feb
+          </p>
+          <p className="text-xs text-gray-500">
+            Scorecards released online via JEES / MyJLPT.
+          </p>
+        </div>
+
+        {/* CARD 4: VIEW RESULTS DIRECT ACTION TILE */}
+        <div className="bg-gradient-to-br from-indigo-50 to-blue-50 border border-indigo-200 p-5 rounded-2xl shadow-sm flex flex-col justify-between space-y-3">
+          <div className="space-y-1">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-bold text-indigo-600 uppercase tracking-wider">
+                Exam Scorecard
+              </span>
+              <span className="text-base">🎓</span>
+            </div>
+            <p className="text-sm font-bold text-indigo-950">
+              View Official Results
+            </p>
+            <p className="text-[11px] text-indigo-700 leading-tight">
+              Access online score lookup portal with registration passcode.
+            </p>
+          </div>
+
           <a
-            href={notice.official_link || "https://www.jlpt.jp/e/"}
+            href={"https://www.jlpt-overseas.jp/onlineresults/preinput.do"}
             target="_blank"
             rel="noreferrer"
-            className="inline-block text-xs text-blue-600 hover:underline font-semibold"
+            className="w-full py-2 px-3 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs rounded-xl text-center transition flex items-center justify-center gap-1.5 shadow-sm"
           >
-            Open Official Portal ↗
+            <span>Check Scores</span>
+            <span className="text-xs">&rarr;</span>
           </a>
         </div>
       </div>
