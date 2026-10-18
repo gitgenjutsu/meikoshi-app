@@ -1,6 +1,7 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, Suspense } from "react";
+import { useSearchParams } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
 import QuizEngine, { Question } from "@/components/jlpt/QuizEngine";
 import ScoreReviewModal from "@/components/jlpt/ScoreReviewModal";
@@ -89,7 +90,12 @@ interface KanjiRow {
   examples?: string | null;
 }
 
-export default function PracticePage() {
+function PracticePageContent() {
+  const searchParams = useSearchParams();
+  const urlLevel = searchParams.get("level")?.toUpperCase() as
+    | JLPTLevel
+    | undefined;
+
   const [view, setView] = useState<ViewState>("MAIN");
   const [selectedLevel, setSelectedLevel] = useState<JLPTLevel | null>(null);
   const [selectedMode, setSelectedMode] = useState<PracticeMode | null>(null);
@@ -103,6 +109,13 @@ export default function PracticePage() {
   const [quizFinished, setQuizFinished] = useState(false);
   const [userAnswers, setUserAnswers] = useState<{ [key: number]: number }>({});
   const [finalScore, setFinalScore] = useState(0);
+
+  // Read level query param from URL on initial load
+  useEffect(() => {
+    if (urlLevel && ["N5", "N4", "N3", "N2", "N1"].includes(urlLevel)) {
+      setSelectedLevel(urlLevel);
+    }
+  }, [urlLevel]);
 
   // Classroom Drills handler
   const handleStartClassroomQuiz = (classroomQuestions: Question[]) => {
@@ -184,205 +197,6 @@ export default function PracticePage() {
     finishQuiz();
   };
 
-  // --- TRANSFORMERS ---
-
-  const transformVocabToQuestions = (
-    vocabList: VocabularyRow[],
-  ): Question[] => {
-    return vocabList.map((item, idx) => {
-      const otherReadings = vocabList
-        .filter((_, i) => i !== idx)
-        .map((v) => v.reading || v.word)
-        .filter(Boolean);
-
-      const shuffledDistractors = [...otherReadings]
-        .sort(() => Math.random() - 0.5)
-        .slice(0, 3);
-
-      while (shuffledDistractors.length < 3) {
-        shuffledDistractors.push("ー");
-      }
-
-      const correctAnswer = item.reading || item.word;
-      const correctIndex = Math.floor(Math.random() * 4);
-      const options = [...shuffledDistractors];
-      options.splice(correctIndex, 0, correctAnswer);
-
-      const exampleText = item.example_ja
-        ? `Example: ${item.example_ja}${item.example_en ? ` (${item.example_en})` : ""}`
-        : "";
-
-      return {
-        id: item.id || String(idx),
-        level: (selectedLevel || item.level || "N4") as JLPTLevel,
-        section: "VOCABULARY",
-        question_type: "MULTIPLE_CHOICE",
-        prompt_text: `Select the correct Japanese reading for: "${item.meanings}"`,
-        question: item.meanings,
-        reading: null,
-        options,
-        correct_option_index: correctIndex,
-        explanation: exampleText,
-      };
-    });
-  };
-
-  const transformGrammarToQuestions = (
-    grammarList: GrammarRow[],
-  ): Question[] => {
-    return grammarList.map((item, idx) => {
-      const patternText =
-        item.pattern || item.grammar_point || item.pattern_ja || "文法";
-      const primaryMeaning =
-        item.meaning || item.meanings || item.meaning_en || "Meaning N/A";
-
-      const otherMeanings = grammarList
-        .filter((_, i) => i !== idx)
-        .map((g) => g.meaning || g.meanings || g.meaning_en)
-        .filter((m): m is string => Boolean(m));
-
-      const shuffledDistractors = [...otherMeanings]
-        .sort(() => Math.random() - 0.5)
-        .slice(0, 3);
-
-      while (shuffledDistractors.length < 3) {
-        shuffledDistractors.push("Incorrect Pattern Meaning");
-      }
-
-      const correctIndex = Math.floor(Math.random() * 4);
-      const options = [...shuffledDistractors];
-      options.splice(correctIndex, 0, primaryMeaning);
-
-      const exampleText = item.example_ja
-        ? `Example: ${item.example_ja}${item.example_en ? ` (${item.example_en})` : ""}`
-        : undefined;
-
-      return {
-        id: item.id || String(idx),
-        level: (selectedLevel || item.level || "N4") as JLPTLevel,
-        section: "GRAMMAR",
-        question_type: "MULTIPLE_CHOICE",
-        prompt_text: `Select the correct usage/meaning for "${patternText}".`,
-        question: patternText,
-        reading: patternText,
-        options,
-        correct_option_index: correctIndex,
-        explanation: exampleText,
-      };
-    });
-  };
-
-  const transformKanjiToQuestions = (kanjiList: KanjiRow[]): Question[] => {
-    return kanjiList.map((item, idx) => {
-      const kanjiText = item.kanji || item.character || "漢字";
-      const primaryMeaning =
-        item.meaning || item.meanings || item.meaning_en || "Meaning N/A";
-
-      const otherMeanings = kanjiList
-        .filter((_, i) => i !== idx)
-        .map((k) => k.meaning || k.meanings || k.meaning_en)
-        .filter((m): m is string => Boolean(m));
-
-      const shuffledDistractors = [...otherMeanings]
-        .sort(() => Math.random() - 0.5)
-        .slice(0, 3);
-
-      while (shuffledDistractors.length < 3) {
-        shuffledDistractors.push("Incorrect Kanji Meaning");
-      }
-
-      const correctIndex = Math.floor(Math.random() * 4);
-      const options = [...shuffledDistractors];
-      options.splice(correctIndex, 0, primaryMeaning);
-
-      const readings = [
-        item.onyomi ? `On: ${item.onyomi}` : null,
-        item.kunyomi ? `Kun: ${item.kunyomi}` : null,
-      ]
-        .filter(Boolean)
-        .join(" | ");
-
-      return {
-        id: item.id || String(idx),
-        level: (selectedLevel || item.level || "N4") as JLPTLevel,
-        section: "KANJI",
-        question_type: "MULTIPLE_CHOICE",
-        prompt_text: `Select the correct English meaning for the Kanji "${kanjiText}".`,
-        question: kanjiText,
-        reading: readings || null,
-        options,
-        correct_option_index: correctIndex,
-        explanation: item.examples ? `Usage: ${item.examples}` : undefined,
-      };
-    });
-  };
-
-  // --- QUIZ START ROUTER ---
-
-  const startQuiz = async (mode: PracticeMode) => {
-    if (!selectedLevel) return;
-
-    setSelectedMode(mode);
-    setLoading(true);
-    setErrorMessage(null);
-    setQuizFinished(false);
-    setQuestions([]);
-    setCurrentQuestionIndex(0);
-    setUserAnswers({});
-
-    if (mode === "VOCABULARY") {
-      const { data, error } = await supabase
-        .from("jlpt_vocabulary")
-        .select("*")
-        .eq("level", selectedLevel);
-
-      if (error) {
-        console.error("Error fetching vocabulary:", error);
-        setErrorMessage("Failed to load vocabulary deck.");
-      } else if (data && data.length > 0) {
-        const transformed = transformVocabToQuestions(data as VocabularyRow[]);
-        setQuestions([...transformed].sort(() => Math.random() - 0.5));
-        setView("QUIZ");
-      } else {
-        setErrorMessage(`No vocabulary data found for ${selectedLevel}.`);
-      }
-    } else if (mode === "GRAMMAR") {
-      const { data, error } = await supabase
-        .from("jlpt_grammar")
-        .select("*")
-        .eq("level", selectedLevel);
-
-      if (error) {
-        console.error("Error fetching grammar:", error);
-        setErrorMessage("Failed to load grammar deck.");
-      } else if (data && data.length > 0) {
-        const transformed = transformGrammarToQuestions(data as GrammarRow[]);
-        setQuestions([...transformed].sort(() => Math.random() - 0.5));
-        setView("QUIZ");
-      } else {
-        setErrorMessage(`No grammar data found for ${selectedLevel}.`);
-      }
-    } else if (mode === "KANJI") {
-      const { data, error } = await supabase
-        .from("jlpt_kanji")
-        .select("*")
-        .eq("level", selectedLevel);
-
-      if (error) {
-        console.error("Error fetching kanji:", error);
-        setErrorMessage("Failed to load kanji deck.");
-      } else if (data && data.length > 0) {
-        const transformed = transformKanjiToQuestions(data as KanjiRow[]);
-        setQuestions([...transformed].sort(() => Math.random() - 0.5));
-        setView("QUIZ");
-      } else {
-        setErrorMessage(`No kanji data found for ${selectedLevel}.`);
-      }
-    }
-
-    setLoading(false);
-  };
-
   const resetAll = () => {
     setView("MAIN");
     setSelectedLevel(null);
@@ -412,15 +226,11 @@ export default function PracticePage() {
                 </p>
                 <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4 max-w-3xl mx-auto">
                   {JLPT_LEVELS.map((item) => {
-                    const isAvailable =
-                      item.level === "N5" || item.level === "N4";
-
                     return (
                       <button
                         key={item.level}
                         onClick={() => setSelectedLevel(item.level)}
-                        disabled={!isAvailable}
-                        className="p-5 bg-white border border-gray-200 rounded-xl shadow-sm hover:border-blue-500 hover:shadow-md transition text-center flex flex-col items-center justify-between min-h-[140px] disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:border-gray-200 disabled:hover:shadow-none"
+                        className="p-5 bg-white border border-gray-200 rounded-xl shadow-sm hover:border-blue-500 hover:shadow-md transition text-center flex flex-col items-center justify-between min-h-[140px]"
                       >
                         <div>
                           <span className="text-3xl font-extrabold text-blue-600 block mb-1">
@@ -474,19 +284,7 @@ export default function PracticePage() {
                     </p>
                   </button>
 
-                  {/* VERB & FORM CONJUGATIONS CARD */}
-                  {/* <button
-                    onClick={() => setView("CONJUGATIONS_HUB")}
-                    className="p-5 bg-gradient-to-br from-indigo-50 to-purple-50 border border-indigo-200 rounded-xl hover:border-indigo-500 hover:shadow-md transition text-left"
-                  >
-                    <div className="text-xl mb-1">🔄</div>
-                    <h3 className="font-bold text-indigo-900">
-                      Verb & Form Conjugations
-                    </h3>
-                    <p className="text-xs text-indigo-600 mt-1">
-                      Speed blitz, native speech contractions & dialogue drills
-                    </p>
-                  </button> */}
+                  {/* READING COMPREHENSION CARD */}
                   <button
                     onClick={() => setView("READING_HUB")}
                     className="p-5 bg-gradient-to-br from-emerald-50 to-teal-50 border border-emerald-200 rounded-xl hover:border-emerald-500 hover:shadow-md transition text-left"
@@ -519,6 +317,7 @@ export default function PracticePage() {
           <FormPracticeDashboard onClose={() => setView("MAIN")} />
         )}
 
+        {/* VIEW 4: READING HUB */}
         {view === "READING_HUB" && selectedLevel && (
           <ReadingPracticeViewer
             selectedLevel={selectedLevel}
@@ -526,7 +325,7 @@ export default function PracticePage() {
           />
         )}
 
-        {/* VIEW 4: ACTIVE MULTIPLE CHOICE QUIZ */}
+        {/* VIEW 5: ACTIVE MULTIPLE CHOICE QUIZ */}
         {view === "QUIZ" && questions.length > 0 && !quizFinished && (
           <div className="max-w-2xl mx-auto">
             <div className="flex justify-between items-center mb-4">
@@ -619,5 +418,19 @@ export default function PracticePage() {
         )}
       </div>
     </main>
+  );
+}
+
+export default function PracticePage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="p-8 text-center text-gray-500">
+          Loading practice drills...
+        </div>
+      }
+    >
+      <PracticePageContent />
+    </Suspense>
   );
 }
