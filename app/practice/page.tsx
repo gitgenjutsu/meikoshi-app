@@ -5,10 +5,17 @@ import { supabase } from "@/lib/supabaseClient";
 import QuizEngine, { Question } from "@/components/jlpt/QuizEngine";
 import ScoreReviewModal from "@/components/jlpt/ScoreReviewModal";
 import ClassroomDrillsHub from "@/components/ClassroomDrillsHub";
+import FormPracticeDashboard from "@/components/FormPracticeDashboard";
+import ReadingPracticeViewer from "@/components/ReadingPracticeViewer";
 
 type JLPTLevel = "N5" | "N4" | "N3" | "N2" | "N1";
 type PracticeMode = "VOCABULARY" | "KANJI" | "GRAMMAR" | "FULL_EXAM";
-type ViewState = "MAIN" | "CLASSROOM_HUB" | "QUIZ";
+type ViewState =
+  | "MAIN"
+  | "CLASSROOM_HUB"
+  | "CONJUGATIONS_HUB"
+  | "QUIZ"
+  | "READING_HUB";
 
 interface LevelConfig {
   level: JLPTLevel;
@@ -106,17 +113,17 @@ export default function PracticePage() {
     setView("QUIZ");
   };
 
-  // 10-Second Auto-Advance Countdown Logic
+  // 15-Second Auto-Advance Countdown Logic
   useEffect(() => {
     if (view !== "QUIZ" || questions.length === 0 || quizFinished) return;
 
-    setTimeLeft(15); // 15 seconds per question
+    setTimeLeft(15);
 
     const timer = setInterval(() => {
       setTimeLeft((prev) => {
         if (prev <= 1) {
           handleAutoNext();
-          return 10;
+          return 15;
         }
         return prev - 1;
       });
@@ -467,41 +474,31 @@ export default function PracticePage() {
                     </p>
                   </button>
 
+                  {/* VERB & FORM CONJUGATIONS CARD */}
                   {/* <button
-                    disabled
-                    onClick={() => startQuiz("VOCABULARY")}
-                    className="p-5 bg-white border border-gray-200 rounded-xl hover:border-blue-500 hover:shadow-md transition text-left disabled:opacity-50 disabled:cursor-not-allowed"
+                    onClick={() => setView("CONJUGATIONS_HUB")}
+                    className="p-5 bg-gradient-to-br from-indigo-50 to-purple-50 border border-indigo-200 rounded-xl hover:border-indigo-500 hover:shadow-md transition text-left"
                   >
-                    <div className="text-xl mb-1">📝</div>
-                    <h3 className="font-bold text-gray-900">Vocabulary</h3>
-                    <p className="text-xs text-gray-500 mt-1">
-                      10s timed per question full deck drill
-                    </p>
-                  </button>
-
-                  <button
-                    disabled
-                    onClick={() => startQuiz("KANJI")}
-                    className="p-5 bg-white border border-gray-200 rounded-xl hover:border-blue-500 hover:shadow-md transition text-left disabled:opacity-50 disabled:cursor-not-allowed"
-                  >
-                    <div className="text-xl mb-1">漢</div>
-                    <h3 className="font-bold text-gray-900">Kanji</h3>
-                    <p className="text-xs text-gray-500 mt-1">
-                      10s timed per question full deck drill
-                    </p>
-                  </button>
-
-                  <button
-                    disabled
-                    onClick={() => startQuiz("GRAMMAR")}
-                    className="p-5 bg-white border border-gray-200 rounded-xl hover:border-blue-500 hover:shadow-md transition text-left disabled:opacity-50 disabled:cursor-not-allowed"
-                  >
-                    <div className="text-xl mb-1">⛩️</div>
-                    <h3 className="font-bold text-gray-900">Grammar</h3>
-                    <p className="text-xs text-gray-500 mt-1">
-                      10s timed per question full deck drill
+                    <div className="text-xl mb-1">🔄</div>
+                    <h3 className="font-bold text-indigo-900">
+                      Verb & Form Conjugations
+                    </h3>
+                    <p className="text-xs text-indigo-600 mt-1">
+                      Speed blitz, native speech contractions & dialogue drills
                     </p>
                   </button> */}
+                  <button
+                    onClick={() => setView("READING_HUB")}
+                    className="p-5 bg-gradient-to-br from-emerald-50 to-teal-50 border border-emerald-200 rounded-xl hover:border-emerald-500 hover:shadow-md transition text-left"
+                  >
+                    <div className="text-xl mb-1">📖</div>
+                    <h3 className="font-bold text-emerald-900">
+                      Reading Comprehension
+                    </h3>
+                    <p className="text-xs text-emerald-600 mt-1">
+                      Real notices, chats, flyers & situational questions
+                    </p>
+                  </button>
                 </div>
               </div>
             )}
@@ -517,7 +514,19 @@ export default function PracticePage() {
           />
         )}
 
-        {/* VIEW 3: ACTIVE MULTIPLE CHOICE QUIZ */}
+        {/* VIEW 3: CONJUGATIONS HUB */}
+        {view === "CONJUGATIONS_HUB" && (
+          <FormPracticeDashboard onClose={() => setView("MAIN")} />
+        )}
+
+        {view === "READING_HUB" && selectedLevel && (
+          <ReadingPracticeViewer
+            selectedLevel={selectedLevel}
+            onClose={() => setView("MAIN")}
+          />
+        )}
+
+        {/* VIEW 4: ACTIVE MULTIPLE CHOICE QUIZ */}
         {view === "QUIZ" && questions.length > 0 && !quizFinished && (
           <div className="max-w-2xl mx-auto">
             <div className="flex justify-between items-center mb-4">
@@ -543,7 +552,7 @@ export default function PracticePage() {
                 className={`h-full transition-all duration-1000 ${
                   timeLeft <= 3 ? "bg-red-500" : "bg-blue-600"
                 }`}
-                style={{ width: `${(timeLeft / 10) * 100}%` }}
+                style={{ width: `${(timeLeft / 15) * 100}%` }}
               ></div>
             </div>
 
